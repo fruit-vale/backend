@@ -32,7 +32,8 @@
   },
   "overrides": {
     "deepmerge-ts": "^8.0.0",
-    "mysql2": "^3.24.3"
+    "mysql2": "^3.24.3",
+    "multer": "^2.3.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
