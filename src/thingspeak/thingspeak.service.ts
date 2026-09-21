@@ -52,6 +52,33 @@ export class ThingspeakService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.timer);
   }
 
+  async ultimasLeituras(limit: number) {
+    const sensorCodigo = process.env.THINGSPEAK_SENSOR_CODIGO;
+    const sensor = sensorCodigo
+      ? await this.prisma.sensores.findUnique({
+          where: { codigo_sensor: sensorCodigo },
+          select: { id: true, codigo_sensor: true },
+        })
+      : null;
+    if (!sensor) return null;
+
+    const leituras = await this.prisma.leituras_sensores.findMany({
+      where: { sensor_id: sensor.id },
+      orderBy: { data_hora: 'desc' },
+      take: limit,
+      select: { data_hora: true, temperatura: true, umidade: true },
+    });
+
+    return {
+      sensor: sensor.codigo_sensor,
+      leituras: leituras.reverse().map((l) => ({
+        data_hora: l.data_hora.toISOString(),
+        temperatura: l.temperatura === null ? null : Number(l.temperatura),
+        umidade: l.umidade === null ? null : Number(l.umidade),
+      })),
+    };
+  }
+
   private async sync(channelId: string, sensorCodigo: string) {
     if (this.syncing) return;
     this.syncing = true;

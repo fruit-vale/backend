@@ -5,13 +5,26 @@ services:
       context: .
       dockerfile: dockerfile
     restart: unless-stopped
-    ports:
-      - 3000
+    networks:
+      - network_public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=network_public
+      - traefik.http.routers.fruitvale-api.rule=Host(`api.fruitvale.com.br`)
+      - traefik.http.routers.fruitvale-api.entrypoints=websecure
+      - traefik.http.routers.fruitvale-api.tls=true
+      - traefik.http.routers.fruitvale-api.tls.certresolver=letsencrypt
+      - traefik.http.services.fruitvale-api.loadbalancer.server.port=3000
     environment:
       PORT: 3000
       NODE_ENV: production
       DATABASE_URL: "postgresql://postgres.coxrxbjgukdmfuiaznjq:fruitvale2026@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
-      THINGSPEAK_CHANNEL_ID: ${THINGSPEAK_CHANNEL_ID}
-      THINGSPEAK_READ_API_KEY: ${THINGSPEAK_READ_API_KEY}
-      THINGSPEAK_SENSOR_CODIGO: ${THINGSPEAK_SENSOR_CODIGO}
-      THINGSPEAK_POLL_INTERVAL_MS: ${THINGSPEAK_POLL_INTERVAL_MS:-30000}
+      THINGSPEAK_CHANNEL_ID: "3502471"
+      THINGSPEAK_READ_API_KEY: "T14UQ8QJLCP9WF4V"
+      THINGSPEAK_SENSOR_CODIGO: "DHT11-01"
+      CORS_ORIGINS: "https://fruitvale-52da0.web.app,https://fruitvale-52da0.firebaseapp.com,http://localhost:5173"
+      THINGSPEAK_POLL_INTERVAL_MS: "3000"
+
+networks:
+  network_public:
+    external: true
