@@ -1,0 +1,17 @@
+services:
+  api:
+    image: fruitvale-api:latest
+    build:
+      context: .
+      dockerfile: dockerfile
+    restart: unless-stopped
+    ports:
+      - 3000
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://postgres.coxrxbjgukdmfuiaznjq:fruitvale2026@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
+      THINGSPEAK_CHANNEL_ID: ${THINGSPEAK_CHANNEL_ID}
+      THINGSPEAK_READ_API_KEY: ${THINGSPEAK_READ_API_KEY}
+      THINGSPEAK_SENSOR_CODIGO: ${THINGSPEAK_SENSOR_CODIGO}
+      THINGSPEAK_POLL_INTERVAL_MS: ${THINGSPEAK_POLL_INTERVAL_MS:-30000}
