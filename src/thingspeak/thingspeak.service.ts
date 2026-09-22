@@ -57,7 +57,12 @@ export class ThingspeakService implements OnModuleInit, OnModuleDestroy {
     const sensor = sensorCodigo
       ? await this.prisma.sensores.findUnique({
           where: { codigo_sensor: sensorCodigo },
-          select: { id: true, codigo_sensor: true },
+          select: {
+            id: true,
+            codigo_sensor: true,
+            latitude: true,
+            longitude: true,
+          },
         })
       : null;
     if (!sensor) return null;
@@ -71,6 +76,13 @@ export class ThingspeakService implements OnModuleInit, OnModuleDestroy {
 
     return {
       sensor: sensor.codigo_sensor,
+      localizacao:
+        sensor.latitude === null || sensor.longitude === null
+          ? null
+          : {
+              latitude: Number(sensor.latitude),
+              longitude: Number(sensor.longitude),
+            },
       leituras: leituras.reverse().map((l) => ({
         data_hora: l.data_hora.toISOString(),
         temperatura: l.temperatura === null ? null : Number(l.temperatura),
