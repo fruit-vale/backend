@@ -2,12 +2,11 @@ export type Role = 'administrador' | 'produtor' | 'analista';
 
 export const ROLES: Role[] = ['administrador', 'produtor', 'analista'];
 
-// valores aceitos por usuarios_tipo_usuario_check: ADMIN, PRODUTOR, TECNICO, OPERADOR
-// (OPERADOR ainda não tem perfil no sistema e fica sem acesso)
+// valores aceitos por usuarios_tipo_usuario_check
 const TIPO_POR_ROLE: Record<Role, string> = {
   administrador: 'ADMIN',
   produtor: 'PRODUTOR',
-  analista: 'TECNICO',
+  analista: 'ANALISTA',
 };
 
 export function toRole(tipoUsuario: string | null): Role | null {
@@ -17,4 +16,9 @@ export function toRole(tipoUsuario: string | null): Role | null {
 
 export function toTipoUsuario(role: Role): string {
   return TIPO_POR_ROLE[role];
+}
+
+/** Administrador é da plataforma; produtor e analista pertencem a uma empresa. */
+export function exigeEmpresa(role: Role) {
+  return role !== 'administrador';
 }

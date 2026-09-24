@@ -1,20 +1,8 @@
 services:
   api:
     image: fruitvale-api:latest
-    build:
-      context: .
-      dockerfile: dockerfile
-    restart: unless-stopped
     networks:
       - network_public
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=network_public
-      - traefik.http.routers.fruitvale-api.rule=Host(`api.fruitvale.com.br`)
-      - traefik.http.routers.fruitvale-api.entrypoints=websecure
-      - traefik.http.routers.fruitvale-api.tls=true
-      - traefik.http.routers.fruitvale-api.tls.certresolver=letsencrypt
-      - traefik.http.services.fruitvale-api.loadbalancer.server.port=3000
     environment:
       PORT: 3000
       NODE_ENV: production
@@ -22,6 +10,18 @@ services:
       CORS_ORIGINS: "https://fruitvale.com.br"
       JWT_SECRET: "3G3Pz+dYc/dtMqHBKTWLnpqNyoGPEHt8IcLF3mQScIXI0ECkpO30DpQrnJMq6tnL"
       JWT_EXPIRES_IN: "8h"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_public
+        - traefik.http.routers.fruitvale-api.rule=Host(`api.fruitvale.com.br`)
+        - traefik.http.routers.fruitvale-api.entrypoints=websecure
+        - traefik.http.routers.fruitvale-api.tls=true
+        - traefik.http.routers.fruitvale-api.tls.certresolver=letsencrypt
+        - traefik.http.services.fruitvale-api.loadbalancer.server.port=3000
 
 networks:
   network_public:

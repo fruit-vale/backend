@@ -10,6 +10,7 @@ export interface JwtPayload {
   sub: number;
   email: string;
   role: Role;
+  empresa_id: number | null;
 }
 
 export type AuthenticatedRequest = Request & { user: JwtPayload };
