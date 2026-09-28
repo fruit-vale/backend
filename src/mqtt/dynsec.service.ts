@@ -16,6 +16,20 @@ const TOPICO_COMANDO = '$CONTROL/dynamic-security/v1';
 const TOPICO_RESPOSTA = `${TOPICO_COMANDO}/response`;
 const TIMEOUT_MS = 5000;
 
+type Tratador = (topico: string, payload: Buffer) => void;
+
+/** Casa um tópico com um filtro MQTT (+ e #), ignorando o prefixo $share/grupo/. */
+function casaFiltro(filtro: string, topico: string) {
+  const partesFiltro = filtro.replace(/^\$share\/[^/]+\//, '').split('/');
+  const partesTopico = topico.split('/');
+  for (let i = 0; i < partesFiltro.length; i++) {
+    if (partesFiltro[i] === '#') return true;
+    if (partesFiltro[i] !== '+' && partesFiltro[i] !== partesTopico[i])
+      return false;
+  }
+  return partesFiltro.length === partesTopico.length;
+}
+
 export type TipoAcl =
   | 'publishClientSend'
   | 'publishClientReceive'
@@ -38,6 +52,11 @@ export interface Acl {
   topic: string;
   allow: boolean;
   priority?: number;
+}
+
+interface Inscricao {
+  filtro: string;
+  tratador: Tratador;
 }
 
 interface Resposta {
@@ -71,6 +90,7 @@ export class DynsecService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DynsecService.name);
   private readonly pendentes = new Map<string, Pendente>();
   private client?: MqttClient;
+  private readonly inscricoes: Inscricao[] = [];
 
   /** Usuário que a própria API usa no broker; não pode ser alterado por aqui. */
   readonly usuarioApi = process.env.MQTT_USER;
@@ -90,16 +110,51 @@ export class DynsecService implements OnModuleInit, OnModuleDestroy {
       clientId: `fruitvale-api-${randomUUID().slice(0, 8)}`,
       reconnectPeriod: 5000,
     });
-    this.client.on('connect', () => {
-      this.logger.log('Conectado ao Mosquitto.');
-      this.client!.subscribe(TOPICO_RESPOSTA, { qos: 1 });
-    });
+    this.client.on('connect', () => void this.aoConectar());
     this.client.on('error', (erro) =>
       this.logger.error(`Erro MQTT: ${erro.message}`),
     );
     this.client.on('message', (topico, payload) => {
-      if (topico === TOPICO_RESPOSTA) this.tratarResposta(payload);
+      if (topico === TOPICO_RESPOSTA) return this.tratarResposta(payload);
+      for (const { filtro, tratador } of this.inscricoes)
+        if (casaFiltro(filtro, topico)) tratador(topico, payload);
     });
+  }
+
+  /** Refeito a cada (re)conexão: sessão limpa perde as assinaturas. */
+  private async aoConectar() {
+    const client = this.client!;
+    this.logger.log('Conectado ao Mosquitto.');
+    // a role admin criada pelo "dynsec init" já permite assinar e receber #;
+    // não alteramos as roles do próprio usuário, pois o plugin derruba a
+    // conexão de quem tem as roles alteradas
+    try {
+      await client.subscribeAsync(TOPICO_RESPOSTA, { qos: 1 });
+      for (const { filtro } of this.inscricoes) await this.assinar(filtro);
+    } catch (erro) {
+      this.logger.error(
+        `Falha ao preparar a conexão MQTT: ${(erro as Error).message}`,
+      );
+    }
+  }
+
+  private async assinar(filtro: string) {
+    const [concedida] = await this.client!.subscribeAsync(filtro, { qos: 1 });
+    if (!concedida || concedida.qos === 128)
+      this.logger.error(`Broker negou a assinatura de ${filtro}.`);
+    else this.logger.log(`Assinando ${filtro}.`);
+  }
+
+  /**
+   * Registra um tratador para um filtro de tópico. A assinatura é feita agora
+   * (se conectado) e refeita em toda reconexão.
+   */
+  inscrever(filtro: string, tratador: Tratador) {
+    this.inscricoes.push({ filtro, tratador });
+    if (this.client?.connected)
+      this.assinar(filtro).catch((erro: Error) =>
+        this.logger.error(`Falha ao assinar ${filtro}: ${erro.message}`),
+      );
   }
 
   async onModuleDestroy() {

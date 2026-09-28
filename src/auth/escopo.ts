@@ -4,8 +4,7 @@ import type { JwtPayload } from './decorators.js';
 /**
  * Propriedades visíveis para o usuário:
  * - administrador: todas
- * - analista: todas da própria empresa
- * - produtor: só aquelas em que é o responsável, dentro da própria empresa
+ * - analista e produtor: todas da própria empresa
  */
 export function escopoPropriedades(
   user: JwtPayload,
@@ -14,12 +13,8 @@ export function escopoPropriedades(
     case 'administrador':
       return {};
     case 'analista':
-      return { empresa_id: user.empresa_id ?? -1 };
     case 'produtor':
-      return {
-        empresa_id: user.empresa_id ?? -1,
-        produtor_responsavel_id: user.sub,
-      };
+      return { empresa_id: user.empresa_id ?? -1 };
   }
 }
 

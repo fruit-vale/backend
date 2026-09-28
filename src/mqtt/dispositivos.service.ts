@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { JwtPayload } from '../auth/decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { randomBytes } from 'node:crypto';
 import { DynsecService, type Acl } from './dynsec.service.js';
 
 const ROLE_EMPRESA = /^empresa-(\d+)$/;
@@ -18,6 +19,9 @@ const PREFIXO_EMPRESA = /^emp\d+-/;
  */
 const usernameEmpresa = (empresaId: number, nome: string) =>
   `emp${empresaId}-${nome}`;
+
+/** Senha aleatória para um login MQTT (devolvida ao usuário uma única vez). */
+export const gerarSenha = () => randomBytes(18).toString('base64url');
 
 /** Role que dá ao dispositivo acesso aos tópicos empresas/{id}/#. */
 export const roleEmpresa = (empresaId: number) => `empresa-${empresaId}`;
@@ -93,7 +97,7 @@ export class DispositivosService {
   }
 
   /** Cria a role da empresa no broker se ainda não existir. */
-  private async garantirRoleEmpresa(empresaId: number) {
+  async garantirRoleEmpresa(empresaId: number) {
     const empresa = await this.prisma.empresas.findUnique({
       where: { id: empresaId },
       select: { razao_social: true },

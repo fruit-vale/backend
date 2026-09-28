@@ -11,7 +11,6 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
 import { CurrentUser, Roles, type JwtPayload } from '../auth/decorators.js';
 import { texto } from '../common/validacao.js';
 import {
@@ -20,7 +19,7 @@ import {
   type Acl,
   type TipoAcl,
 } from './dynsec.service.js';
-import { DispositivosService } from './dispositivos.service.js';
+import { DispositivosService, gerarSenha } from './dispositivos.service.js';
 
 const SENHA_MIN = 12;
 const ROLE_API = 'admin';
@@ -43,8 +42,7 @@ function lerNome(valor: unknown, campo: string, max = NOME_ROTA_MAX) {
 
 /** Usa a senha informada ou gera uma aleatória (devolvida uma única vez). */
 function lerSenha(valor: unknown) {
-  if (valor === undefined || valor === null)
-    return randomBytes(18).toString('base64url');
+  if (valor === undefined || valor === null) return gerarSenha();
   if (typeof valor !== 'string' || valor.length < SENHA_MIN)
     throw new BadRequestException(
       `A senha deve ter pelo menos ${SENHA_MIN} caracteres.`,
@@ -57,7 +55,7 @@ function lerRole(valor: unknown) {
   const role = lerNome(valor, 'role');
   if (role === ROLE_API)
     throw new BadRequestException(
-      `A role ${ROLE_API} não pode ser atribuída por aqui.`,
+      `A role ${role} não pode ser atribuída por aqui.`,
     );
   return role;
 }
@@ -127,15 +125,14 @@ export class MqttController {
   private roleNaoProtegida(rolename: string) {
     if (rolename === ROLE_API)
       throw new BadRequestException(
-        `A role ${ROLE_API} da API não pode ser alterada por aqui.`,
+        `A role ${rolename} da API não pode ser alterada por aqui.`,
       );
     return rolename;
   }
 
-  // clientes: produtor gerencia os da própria empresa, admin os de qualquer uma
+  // clientes: acesso bruto aos logins do broker; sensores usam /sensores
 
   @Get('clientes')
-  @Roles('administrador', 'produtor')
   listarClientes(
     @CurrentUser() user: JwtPayload,
     @Query('empresa_id', new ParseIntPipe({ optional: true }))
@@ -145,7 +142,6 @@ export class MqttController {
   }
 
   @Get('clientes/:username')
-  @Roles('administrador', 'produtor')
   buscarCliente(
     @Param('username') username: string,
     @CurrentUser() user: JwtPayload,
@@ -154,7 +150,6 @@ export class MqttController {
   }
 
   @Post('clientes')
-  @Roles('administrador', 'produtor')
   criarCliente(
     @Body() body: Record<string, unknown>,
     @CurrentUser() user: JwtPayload,
@@ -171,7 +166,6 @@ export class MqttController {
   }
 
   @Patch('clientes/:username')
-  @Roles('administrador', 'produtor')
   @HttpCode(204)
   async alterarCliente(
     @Param('username') username: string,
@@ -185,7 +179,6 @@ export class MqttController {
   }
 
   @Post('clientes/:username/senha')
-  @Roles('administrador', 'produtor')
   alterarSenha(
     @Param('username') username: string,
     @Body() body: Record<string, unknown>,
@@ -200,7 +193,6 @@ export class MqttController {
   }
 
   @Delete('clientes/:username')
-  @Roles('administrador', 'produtor')
   @HttpCode(204)
   async removerCliente(
     @Param('username') username: string,

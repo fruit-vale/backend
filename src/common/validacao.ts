@@ -13,6 +13,18 @@ const ROTULOS: Record<string, string> = {
   responsavel: 'Responsável',
   cidade: 'Cidade',
   estado: 'UF',
+  variedade: 'Variedade',
+  descricao: 'Descrição',
+  temp_recomendada_min: 'Temperatura mínima',
+  temp_recomendada_max: 'Temperatura máxima',
+  umidade_recomendada_min: 'Umidade mínima',
+  umidade_recomendada_max: 'Umidade máxima',
+  ciclo_medio_dias: 'Ciclo médio (dias)',
+  nome_identificacao: 'Identificação do lote',
+  data_plantio: 'Data de plantio',
+  previsao_colheita: 'Previsão de colheita',
+  data_instalacao: 'Data de instalação',
+  area_ha: 'Área (ha)',
 };
 
 const rotulo = (campo: string) => ROTULOS[campo] ?? campo;
@@ -80,3 +92,55 @@ export function cnpj(valor: string) {
 
   return limpo.replace(/(\w{2})(\w{3})(\w{3})(\w{4})(\d{2})/, '$1.$2.$3/$4-$5');
 }
+
+/**
+ * Lê um número do corpo; retorna null se opcional e ausente. `max` é
+ * exclusivo, como o limite de colunas DECIMAL(p, 2).
+ */
+export function numero(
+  corpo: Corpo,
+  campo: string,
+  {
+    obrigatorio = false,
+    min,
+    max,
+    inteiro = false,
+  }: { obrigatorio?: boolean; min: number; max: number; inteiro?: boolean },
+): number | null {
+  const valor = corpo?.[campo];
+  if (valor === undefined || valor === null || valor === '') {
+    if (obrigatorio)
+      throw new BadRequestException(`Preencha o campo ${rotulo(campo)}.`);
+    return null;
+  }
+  if (typeof valor !== 'number' || !Number.isFinite(valor))
+    throw new BadRequestException(`${rotulo(campo)} deve ser um número.`);
+  if (inteiro && !Number.isInteger(valor))
+    throw new BadRequestException(`${rotulo(campo)} deve ser inteiro.`);
+  if (valor < min || valor >= max)
+    throw new BadRequestException(
+      `${rotulo(campo)} deve estar entre ${min} e ${max}.`,
+    );
+  return inteiro ? valor : Math.round(valor * 100) / 100;
+}
+
+/** Data AAAA-MM-DD opcional; retorna null se ausente. */
+export function data(corpo: Corpo, campo: string): Date | null {
+  const valor = corpo?.[campo];
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor))
+    throw new BadRequestException(
+      `${rotulo(campo)} deve estar no formato AAAA-MM-DD.`,
+    );
+  const convertida = new Date(`${valor}T00:00:00Z`);
+  if (
+    Number.isNaN(convertida.getTime()) ||
+    convertida.toISOString().slice(0, 10) !== valor
+  )
+    throw new BadRequestException(`${rotulo(campo)} inválida.`);
+  return convertida;
+}
+
+/** Date de coluna DATE para AAAA-MM-DD. */
+export const dataIso = (valor: Date | null) =>
+  valor?.toISOString().slice(0, 10) ?? null;

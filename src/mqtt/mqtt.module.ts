@@ -6,6 +6,6 @@ import { MqttController } from './mqtt.controller.js';
 @Module({
   controllers: [MqttController],
   providers: [DynsecService, DispositivosService],
-  exports: [DynsecService],
+  exports: [DynsecService, DispositivosService],
 })
 export class MqttModule {}
