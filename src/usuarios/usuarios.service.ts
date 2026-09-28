@@ -11,6 +11,7 @@ import {
   toTipoUsuario,
   type Role,
 } from '../auth/roles.js';
+import { PerfilService } from '../auth/perfil.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const usuarioSelect = {
@@ -56,7 +57,10 @@ function toDto({ tipo_usuario, empresas, ...usuario }: UsuarioRow) {
 
 @Injectable()
 export class UsuariosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly perfis: PerfilService,
+  ) {}
 
   async listar() {
     const usuarios = await this.prisma.usuarios.findMany({
@@ -114,6 +118,7 @@ export class UsuariosService {
       },
       select: usuarioSelect,
     });
+    await this.perfis.invalidar(id);
     return toDto(usuario);
   }
 

@@ -9,7 +9,7 @@ async function bootstrap() {
       .split(',')
       .map((o) => o.trim())
       .filter(Boolean),
-    methods: ['GET', 'POST', 'PATCH'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
   await app.listen(process.env.PORT ?? 3000);

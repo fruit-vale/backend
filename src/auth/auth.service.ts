@@ -25,7 +25,7 @@ type UsuarioRow = {
   empresas: { id: number; razao_social: string } | null;
 };
 
-const ativo = (status: string | null) => (status ?? 'ATIVO') === 'ATIVO';
+export const ativo = (status: string | null) => (status ?? 'ATIVO') === 'ATIVO';
 
 /** Perfil do usuário, ou null se ele não pode acessar o sistema. */
 function perfil(usuario: UsuarioRow | null) {

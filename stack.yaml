@@ -3,6 +3,7 @@ services:
     image: fruitvale-api:latest
     networks:
       - network_public
+      - fruitvale_internal
     environment:
       PORT: 3000
       NODE_ENV: production
@@ -10,9 +11,10 @@ services:
       CORS_ORIGINS: "https://fruitvale.com.br"
       JWT_SECRET: "3G3Pz+dYc/dtMqHBKTWLnpqNyoGPEHt8IcLF3mQScIXI0ECkpO30DpQrnJMq6tnL"
       JWT_EXPIRES_IN: "8h"
-      MQTT_URL: "mqtt://mosquitto:1883"
+      MQTT_URL: "mqtt://fruitvale-mosquitto:1883"
       MQTT_USER: fruitvale
       MQTT_PASS: Fearg4lo&7
+      REDIS_URL: "redis://:8ea4a0d553ce6b77b9e9eb4494dc93183cf91bc03187988b@fruitvale-redis:6379"
     deploy:
       replicas: 1
       restart_policy:
@@ -29,7 +31,11 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     networks:
-      - network_public
+      network_public:
+      # alias único: "mosquitto" pode colidir com serviços de outros stacks
+      fruitvale_internal:
+        aliases:
+          - fruitvale-mosquitto
     environment:
       MQTT_USER: fruitvale
       MQTT_PASS: Fearg4lo&7
@@ -42,15 +48,21 @@ services:
         persistence true
         persistence_location /mosquitto/data/
         allow_anonymous false
-        password_file /mosquitto/config/passwd
+        plugin /usr/lib/mosquitto_dynamic_security.so
+        plugin_opt_config_file /mosquitto/data/dynamic-security.json
         listener 1883
         listener 9001
         protocol websockets
         EOF
-        mosquitto_passwd -b -c /mosquitto/config/passwd "$$MQTT_USER" "$$MQTT_PASS"
+        [ -f /mosquitto/data/dynamic-security.json ] || mosquitto_ctrl dynsec init /mosquitto/data/dynamic-security.json "$$MQTT_USER" "$$MQTT_PASS"
+        chown -R mosquitto:mosquitto /mosquitto/data
         exec mosquitto -c /mosquitto/config/mosquitto.conf
     deploy:
       replicas: 1
+      # o volume é local ao nó: fora dele o broker sobe sem os usuários do dynsec
+      placement:
+        constraints:
+          - node.role == manager
       restart_policy:
         condition: any
       labels:
@@ -73,9 +85,34 @@ services:
         - traefik.http.routers.fruitvale-mqtt-ws.service=fruitvale-mqtt-ws
         - traefik.http.services.fruitvale-mqtt-ws.loadbalancer.server.port=9001
 
+  # cache da API: só na rede interna, sem Traefik e sem persistência em disco
+  redis:
+    image: redis:8-alpine
+    networks:
+      fruitvale_internal:
+        aliases:
+          - fruitvale-redis
+    environment:
+      REDIS_PASSWORD: "8ea4a0d553ce6b77b9e9eb4494dc93183cf91bc03187988b"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        exec docker-entrypoint.sh redis-server \
+          --requirepass "$$REDIS_PASSWORD" \
+          --save "" \
+          --appendonly no \
+          --maxmemory 128mb \
+          --maxmemory-policy allkeys-lru
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+
 volumes:
   mosquitto_data:
 
 networks:
   network_public:
     external: true
+  fruitvale_internal:
+    driver: overlay
