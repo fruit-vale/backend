@@ -10,6 +10,9 @@ services:
       CORS_ORIGINS: "https://fruitvale.com.br"
       JWT_SECRET: "3G3Pz+dYc/dtMqHBKTWLnpqNyoGPEHt8IcLF3mQScIXI0ECkpO30DpQrnJMq6tnL"
       JWT_EXPIRES_IN: "8h"
+      MQTT_URL: "mqtt://mosquitto:1883"
+      MQTT_USER: fruitvale
+      MQTT_PASS: Fearg4lo&7
     deploy:
       replicas: 1
       restart_policy:
@@ -22,6 +25,56 @@ services:
         - traefik.http.routers.fruitvale-api.tls=true
         - traefik.http.routers.fruitvale-api.tls.certresolver=letsencrypt
         - traefik.http.services.fruitvale-api.loadbalancer.server.port=3000
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    networks:
+      - network_public
+    environment:
+      MQTT_USER: fruitvale
+      MQTT_PASS: Fearg4lo&7
+    volumes:
+      - mosquitto_data:/mosquitto/data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /mosquitto/config/mosquitto.conf <<'EOF'
+        persistence true
+        persistence_location /mosquitto/data/
+        allow_anonymous false
+        password_file /mosquitto/config/passwd
+        listener 1883
+        listener 9001
+        protocol websockets
+        EOF
+        mosquitto_passwd -b -c /mosquitto/config/passwd "$$MQTT_USER" "$$MQTT_PASS"
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_public
+
+        # MQTT sobre TLS (TCP) -> mqtt.fruitvale.com.br:8883
+        - traefik.tcp.routers.fruitvale-mqtt.rule=HostSNI(`mqtt.fruitvale.com.br`)
+        - traefik.tcp.routers.fruitvale-mqtt.entrypoints=mqtts
+        - traefik.tcp.routers.fruitvale-mqtt.tls=true
+        - traefik.tcp.routers.fruitvale-mqtt.tls.certresolver=letsencrypt
+        - traefik.tcp.routers.fruitvale-mqtt.service=fruitvale-mqtt
+        - traefik.tcp.services.fruitvale-mqtt.loadbalancer.server.port=1883
+
+        # MQTT sobre WebSocket -> wss://mqtt.fruitvale.com.br
+        - traefik.http.routers.fruitvale-mqtt-ws.rule=Host(`mqtt.fruitvale.com.br`)
+        - traefik.http.routers.fruitvale-mqtt-ws.entrypoints=websecure
+        - traefik.http.routers.fruitvale-mqtt-ws.tls=true
+        - traefik.http.routers.fruitvale-mqtt-ws.tls.certresolver=letsencrypt
+        - traefik.http.routers.fruitvale-mqtt-ws.service=fruitvale-mqtt-ws
+        - traefik.http.services.fruitvale-mqtt-ws.loadbalancer.server.port=9001
+
+volumes:
+  mosquitto_data:
 
 networks:
   network_public:

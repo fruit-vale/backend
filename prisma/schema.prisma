@@ -69,16 +69,16 @@ model informacoes_logisticas {
 }
 
 model leituras_sensores {
-  id                  BigInt   @id @default(autoincrement())
-  sensor_id           Int
-  data_hora           DateTime @default(now()) @db.Timestamp(6)
-  temperatura         Decimal? @db.Decimal(5, 2)
-  umidade             Decimal? @db.Decimal(5, 2)
-  pressao_atmosferica Decimal? @db.Decimal(6, 2)
-  luminosidade        Decimal? @db.Decimal(8, 2)
-  precipitacao        Decimal? @db.Decimal(5, 2)
-  umidade_solo        Decimal? @db.Decimal(5, 2)
-  sensores            sensores @relation(fields: [sensor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id           BigInt   @id @default(autoincrement())
+  sensor_id    Int
+  data_hora    DateTime @default(now()) @db.Timestamp(6)
+  temperatura  Decimal? @db.Decimal(5, 2)
+  umidade      Decimal? @db.Decimal(5, 2)
+  ph           Decimal? @db.Decimal(6, 2)
+  luminosidade Decimal? @db.Decimal(8, 2)
+  precipitacao Decimal? @db.Decimal(5, 2)
+  umidade_solo Decimal? @db.Decimal(5, 2)
+  sensores     sensores @relation(fields: [sensor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([sensor_id, data_hora], map: "idx_leituras_sensor_data")
 }
