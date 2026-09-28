@@ -6,14 +6,8 @@ import {
   Post,
 } from '@nestjs/common';
 import { Roles } from '../auth/decorators.js';
-import { cnpj, email, texto } from '../common/validacao.js';
+import { UFS, cnpj, email, texto } from '../common/validacao.js';
 import { EmpresasService } from './empresas.service.js';
-
-// siglas das 27 unidades federativas
-const UFS =
-  'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(
-    ' ',
-  );
 
 @Controller('empresas')
 @Roles('administrador')

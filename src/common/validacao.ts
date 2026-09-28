@@ -25,9 +25,19 @@ const ROTULOS: Record<string, string> = {
   previsao_colheita: 'Previsão de colheita',
   data_instalacao: 'Data de instalação',
   area_ha: 'Área (ha)',
+  municipio: 'Município',
+  latitude: 'Latitude',
+  longitude: 'Longitude',
+  area_total_ha: 'Área total (ha)',
 };
 
 const rotulo = (campo: string) => ROTULOS[campo] ?? campo;
+
+// siglas das 27 unidades federativas
+export const UFS =
+  'AC AL AM AP BA CE DF ES GO MA MG MS MT PA PB PE PI PR RJ RN RO RR RS SC SE SP TO'.split(
+    ' ',
+  );
 
 /** Lê um campo de texto do corpo, com trim; retorna null se opcional e vazio. */
 export function texto(
@@ -95,7 +105,8 @@ export function cnpj(valor: string) {
 
 /**
  * Lê um número do corpo; retorna null se opcional e ausente. `max` é
- * exclusivo, como o limite de colunas DECIMAL(p, 2).
+ * exclusivo (como o limite de colunas DECIMAL(p, 2)), a menos que
+ * `maxInclusivo`. O valor é arredondado a `casas` decimais.
  */
 export function numero(
   corpo: Corpo,
@@ -105,7 +116,16 @@ export function numero(
     min,
     max,
     inteiro = false,
-  }: { obrigatorio?: boolean; min: number; max: number; inteiro?: boolean },
+    maxInclusivo = false,
+    casas = 2,
+  }: {
+    obrigatorio?: boolean;
+    min: number;
+    max: number;
+    inteiro?: boolean;
+    maxInclusivo?: boolean;
+    casas?: number;
+  },
 ): number | null {
   const valor = corpo?.[campo];
   if (valor === undefined || valor === null || valor === '') {
@@ -117,11 +137,11 @@ export function numero(
     throw new BadRequestException(`${rotulo(campo)} deve ser um número.`);
   if (inteiro && !Number.isInteger(valor))
     throw new BadRequestException(`${rotulo(campo)} deve ser inteiro.`);
-  if (valor < min || valor >= max)
+  if (valor < min || (maxInclusivo ? valor > max : valor >= max))
     throw new BadRequestException(
       `${rotulo(campo)} deve estar entre ${min} e ${max}.`,
     );
-  return inteiro ? valor : Math.round(valor * 100) / 100;
+  return inteiro ? valor : Number(valor.toFixed(casas));
 }
 
 /** Data AAAA-MM-DD opcional; retorna null se ausente. */

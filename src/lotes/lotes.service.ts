@@ -107,16 +107,22 @@ export class LotesService {
     const [propriedade, cultura] = await Promise.all([
       this.prisma.propriedades.findFirst({
         where: { id: dados.propriedade_id, ...escopoPropriedades(user) },
-        select: { id: true },
+        select: { id: true, empresa_id: true },
       }),
       this.prisma.culturas.findUnique({
         where: { id: dados.cultura_id },
-        select: { ciclo_medio_dias: true },
+        select: { ciclo_medio_dias: true, empresa_id: true },
       }),
     ]);
     if (!propriedade)
       throw new BadRequestException('Propriedade não encontrada.');
-    if (!cultura) throw new BadRequestException('Cultura não encontrada.');
+    // cultura da plataforma ou da mesma empresa da propriedade
+    if (
+      !cultura ||
+      (cultura.empresa_id !== null &&
+        cultura.empresa_id !== propriedade.empresa_id)
+    )
+      throw new BadRequestException('Cultura não encontrada.');
 
     if (
       dados.data_plantio &&

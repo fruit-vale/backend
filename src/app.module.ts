@@ -8,6 +8,7 @@ import { LeiturasModule } from './leituras/leituras.module.js';
 import { LotesModule } from './lotes/lotes.module.js';
 import { MqttModule } from './mqtt/mqtt.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { PropriedadesModule } from './propriedades/propriedades.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { SensoresModule } from './sensores/sensores.module.js';
 import { UsuariosModule } from './usuarios/usuarios.module.js';
@@ -24,6 +25,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     LeiturasModule,
     CulturasModule,
     LotesModule,
+    PropriedadesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

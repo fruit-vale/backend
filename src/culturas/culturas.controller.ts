@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,9 +10,13 @@ import {
   Post,
   Patch,
 } from '@nestjs/common';
-import { Roles } from '../auth/decorators.js';
+import { CurrentUser, Roles, type JwtPayload } from '../auth/decorators.js';
 import { numero, texto } from '../common/validacao.js';
-import { CulturasService, type DadosCultura } from './culturas.service.js';
+import {
+  CulturasService,
+  type DadosCultura,
+  type EmpresaCultura,
+} from './culturas.service.js';
 
 // limites das colunas DECIMAL(5, 2)
 const DECIMAL_5_2 = { min: -999.99, max: 1000 };
@@ -42,21 +47,36 @@ function lerCultura(body: Record<string, unknown>): DadosCultura {
   };
 }
 
+/** Só o administrador escolhe; ausente ou null = cultura da plataforma. */
+function lerEmpresaId(valor: unknown): EmpresaCultura {
+  if (valor === undefined || valor === null || valor === '') return null;
+  if (!Number.isInteger(valor))
+    throw new BadRequestException('empresa_id deve ser um número ou null.');
+  return valor as number;
+}
+
 @Controller('culturas')
-@Roles('administrador')
+@Roles('administrador', 'produtor')
 export class CulturasController {
   constructor(private readonly culturas: CulturasService) {}
 
-  // produtor e analista também consultam (ex.: ao cadastrar um lote)
+  // o analista também consulta (ex.: dados de mercado)
   @Get()
   @Roles('administrador', 'produtor', 'analista')
-  listar() {
-    return this.culturas.listar();
+  listar(@CurrentUser() user: JwtPayload) {
+    return this.culturas.listar(user);
   }
 
   @Post()
-  criar(@Body() body: Record<string, unknown>) {
-    return this.culturas.criar(lerCultura(body));
+  criar(
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.culturas.criar(
+      user,
+      lerCultura(body),
+      lerEmpresaId(body?.empresa_id),
+    );
   }
 
   // o formulário envia a cultura completa
@@ -64,13 +84,17 @@ export class CulturasController {
   alterar(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: Record<string, unknown>,
+    @CurrentUser() user: JwtPayload,
   ) {
-    return this.culturas.alterar(id, lerCultura(body));
+    return this.culturas.alterar(user, id, lerCultura(body));
   }
 
   @Delete(':id')
   @HttpCode(204)
-  async remover(@Param('id', ParseIntPipe) id: number) {
-    await this.culturas.remover(id);
+  async remover(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    await this.culturas.remover(user, id);
   }
 }

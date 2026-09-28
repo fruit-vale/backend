@@ -31,3 +31,12 @@ export function escopoAlertas(
 ): Prisma.alertas_climaticosWhereInput {
   return { lotes: escopoLotes(user) };
 }
+
+/**
+ * Culturas visíveis: as da plataforma (sem empresa) e as da própria empresa;
+ * o administrador vê todas.
+ */
+export function escopoCulturas(user: JwtPayload): Prisma.culturasWhereInput {
+  if (user.role === 'administrador') return {};
+  return { OR: [{ empresa_id: null }, { empresa_id: user.empresa_id ?? -1 }] };
+}

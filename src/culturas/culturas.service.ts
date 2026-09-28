@@ -1,9 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { JwtPayload } from '../auth/decorators.js';
+import { escopoCulturas } from '../auth/escopo.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface DadosCultura {
@@ -17,6 +20,9 @@ export interface DadosCultura {
   descricao: string | null;
 }
 
+/** null = cultura da plataforma (visível a todas as empresas). */
+export type EmpresaCultura = number | null;
+
 const culturaSelect = {
   id: true,
   nome: true,
@@ -27,6 +33,7 @@ const culturaSelect = {
   umidade_recomendada_max: true,
   ciclo_medio_dias: true,
   descricao: true,
+  empresas: { select: { id: true, razao_social: true } },
   _count: { select: { lotes: true } },
 } as const;
 
@@ -41,14 +48,16 @@ type CulturaRow = {
   umidade_recomendada_max: Decimal;
   ciclo_medio_dias: number | null;
   descricao: string | null;
+  empresas: { id: number; razao_social: string } | null;
   _count: { lotes: number };
 };
 
 const num = (valor: Decimal) => valor?.toNumber() ?? null;
 
-function toDto({ _count, ...c }: CulturaRow) {
+function toDto({ _count, empresas, ...c }: CulturaRow) {
   return {
     ...c,
+    empresa: empresas,
     temp_recomendada_min: num(c.temp_recomendada_min),
     temp_recomendada_max: num(c.temp_recomendada_max),
     umidade_recomendada_min: num(c.umidade_recomendada_min),
@@ -70,21 +79,49 @@ function validarFaixas(dados: DadosCultura) {
       );
 }
 
+/**
+ * Culturas da plataforma (empresa_id NULL, geridas pelo administrador) e
+ * culturas de cada empresa (geridas também pelos produtores dela).
+ */
 @Injectable()
 export class CulturasService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listar() {
+  async listar(user: JwtPayload) {
     const culturas = await this.prisma.culturas.findMany({
+      where: escopoCulturas(user),
       select: culturaSelect,
       orderBy: [{ nome: 'asc' }, { variedade: 'asc' }],
     });
     return culturas.map(toDto);
   }
 
-  private async garantirUnica(dados: DadosCultura, ignorarId?: number) {
+  /** Cultura que o usuário pode alterar ou excluir. */
+  private async editavel(user: JwtPayload, id: number) {
+    const cultura = await this.prisma.culturas.findFirst({
+      where: { id, ...escopoCulturas(user) },
+      select: {
+        empresa_id: true,
+        _count: { select: { lotes: true, dados_mercado: true } },
+      },
+    });
+    if (!cultura) throw new NotFoundException('Cultura não encontrada.');
+    if (user.role !== 'administrador' && cultura.empresa_id === null)
+      throw new ForbiddenException(
+        'Culturas da plataforma só podem ser alteradas pelo administrador.',
+      );
+    return cultura;
+  }
+
+  /** Nome + variedade não se repetem dentro da mesma empresa (ou da plataforma). */
+  private async garantirUnica(
+    dados: DadosCultura,
+    empresaId: EmpresaCultura,
+    ignorarId?: number,
+  ) {
     const repetida = await this.prisma.culturas.findFirst({
       where: {
+        empresa_id: empresaId,
         nome: { equals: dados.nome, mode: 'insensitive' },
         variedade: dados.variedade
           ? { equals: dados.variedade, mode: 'insensitive' }
@@ -99,25 +136,42 @@ export class CulturasService {
       );
   }
 
-  async criar(dados: DadosCultura) {
+  /**
+   * O administrador escolhe a empresa (ou a plataforma); o produtor sempre
+   * cria na própria empresa.
+   */
+  async criar(
+    user: JwtPayload,
+    dados: DadosCultura,
+    empresaId: EmpresaCultura,
+  ) {
+    const empresa =
+      user.role === 'administrador' ? empresaId : (user.empresa_id ?? null);
+    if (user.role !== 'administrador' && empresa === null)
+      throw new ForbiddenException('Seu usuário não tem empresa vinculada.');
+    if (
+      empresa !== null &&
+      !(await this.prisma.empresas.findUnique({
+        where: { id: empresa },
+        select: { id: true },
+      }))
+    )
+      throw new BadRequestException('Empresa não encontrada.');
+
     validarFaixas(dados);
-    await this.garantirUnica(dados);
+    await this.garantirUnica(dados, empresa);
     const cultura = await this.prisma.culturas.create({
-      data: dados,
+      data: { ...dados, empresa_id: empresa },
       select: culturaSelect,
     });
     return toDto(cultura);
   }
 
-  async alterar(id: number, dados: DadosCultura) {
-    const existe = await this.prisma.culturas.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!existe) throw new NotFoundException('Cultura não encontrada.');
-
+  /** A empresa da cultura não muda depois de criada (lotes dependem dela). */
+  async alterar(user: JwtPayload, id: number, dados: DadosCultura) {
+    const atual = await this.editavel(user, id);
     validarFaixas(dados);
-    await this.garantirUnica(dados, id);
+    await this.garantirUnica(dados, atual.empresa_id, id);
     const cultura = await this.prisma.culturas.update({
       where: { id },
       data: dados,
@@ -126,14 +180,8 @@ export class CulturasService {
     return toDto(cultura);
   }
 
-  async remover(id: number) {
-    const cultura = await this.prisma.culturas.findUnique({
-      where: { id },
-      select: {
-        _count: { select: { lotes: true, dados_mercado: true } },
-      },
-    });
-    if (!cultura) throw new NotFoundException('Cultura não encontrada.');
+  async remover(user: JwtPayload, id: number) {
+    const cultura = await this.editavel(user, id);
     const { lotes, dados_mercado } = cultura._count;
     if (lotes || dados_mercado)
       throw new ConflictException(
