@@ -2,12 +2,23 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { DynsecService } from '../mqtt/dynsec.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
-import { FILTRO_LEITURAS, lerLeitura, lerTopico } from './leituras-mqtt.js';
+import type { TipoMedida } from '../sensores/medidas.js';
+import {
+  FILTRO_LEITURAS,
+  lerLeitura,
+  lerTopico,
+  type MedidaIngestao,
+} from './leituras-mqtt.js';
 
 const TTL_SENSOR_SEGUNDOS = 60;
 
 /** Dados do sensor usados a cada mensagem; null = código não cadastrado. */
-type SensorIngestao = { id: number; empresa_id: number; status: string } | null;
+type SensorIngestao = {
+  id: number;
+  empresa_id: number;
+  status: string;
+  medidas: MedidaIngestao[];
+} | null;
 
 export const chaveSensor = (codigo: string) => `sensor:${codigo}`;
 
@@ -47,12 +58,17 @@ export class IngestaoService implements OnModuleInit {
         id: true,
         status: true,
         propriedades: { select: { empresa_id: true } },
+        medidas: { select: { id: true, chave: true, tipo: true } },
       },
     });
     const sensor = encontrado && {
       id: encontrado.id,
       empresa_id: encontrado.propriedades.empresa_id,
       status: encontrado.status ?? 'ATIVO',
+      medidas: encontrado.medidas.map((m) => ({
+        ...m,
+        tipo: m.tipo as TipoMedida,
+      })),
     };
     await this.redis.gravar(chaveSensor(codigo), sensor, TTL_SENSOR_SEGUNDOS);
     return sensor;
@@ -71,14 +87,24 @@ export class IngestaoService implements OnModuleInit {
     }
     if (sensor.status === 'INATIVO') return;
 
-    const leitura = lerLeitura(payload);
+    const leitura = lerLeitura(payload, sensor.medidas);
     if (typeof leitura === 'string') {
       this.logger.warn(`Leitura descartada de ${destino.codigo}: ${leitura}.`);
       return;
     }
+    if (leitura.ignoradas.length)
+      this.logger.warn(
+        `Leitura de ${destino.codigo}: chaves não cadastradas ignoradas (${leitura.ignoradas.join(', ')}).`,
+      );
 
+    // uma linha por mensagem, com um valor por dado configurado
     await this.prisma.leituras_sensores.create({
-      data: { sensor_id: sensor.id, ...leitura },
+      data: {
+        sensor_id: sensor.id,
+        data_hora: leitura.data_hora,
+        ...leitura.fixas,
+        valores: { create: leitura.valores },
+      },
     });
   }
 }

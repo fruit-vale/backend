@@ -16,8 +16,10 @@ import {
 import { DynsecService } from '../mqtt/dynsec.service.js';
 import { chaveSensor } from '../leituras/ingestao.service.js';
 import { dataIso } from '../common/validacao.js';
+import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
+import type { MedidaEntrada, TipoMedida } from './medidas.js';
 
 export type StatusSensor = 'ATIVO' | 'INATIVO' | 'MANUTENCAO';
 export const STATUS_SENSOR: StatusSensor[] = ['ATIVO', 'INATIVO', 'MANUTENCAO'];
@@ -33,6 +35,8 @@ export interface NovoSensor {
   /** O sensor fica num lote; a propriedade vem dele. */
   lote_id: number;
   data_instalacao: Date | null;
+  /** Dados que o sensor envia (nome, chave no JSON, unidade, tipo). */
+  medidas: MedidaEntrada[];
 }
 
 const sensorSelect = {
@@ -50,24 +54,14 @@ const sensorSelect = {
     },
   },
   lotes: { select: { id: true, nome_identificacao: true } },
+  medidas: {
+    select: { id: true, chave: true, nome: true, unidade: true, tipo: true },
+    orderBy: { id: 'asc' },
+  },
   _count: { select: { leituras_sensores: true } },
 } as const;
 
-type SensorRow = {
-  id: number;
-  codigo_sensor: string;
-  tipo: string;
-  status: string | null;
-  data_instalacao: Date | null;
-  propriedades: {
-    id: number;
-    nome: string;
-    empresa_id: number;
-    empresas: { id: number; razao_social: string };
-  };
-  lotes: { id: number; nome_identificacao: string } | null;
-  _count: { leituras_sensores: number };
-};
+type SensorRow = Prisma.sensoresGetPayload<{ select: typeof sensorSelect }>;
 
 /** null = não foi possível consultar o broker. */
 type AcessoMqtt = 'ativo' | 'inativo' | 'sem_acesso' | null;
@@ -86,6 +80,7 @@ function toDto(sensor: SensorRow, acesso: AcessoMqtt) {
       nome: sensor.lotes.nome_identificacao,
     },
     empresa: sensor.propriedades.empresas,
+    medidas: sensor.medidas.map((m) => ({ ...m, tipo: m.tipo as TipoMedida })),
     total_leituras: sensor._count.leituras_sensores,
     acesso_mqtt: acesso,
   };
@@ -205,6 +200,14 @@ export class SensoresService {
           lote_id: lote.id,
           data_instalacao: dados.data_instalacao,
           status: 'ATIVO',
+          medidas: {
+            create: dados.medidas.map((m) => ({
+              chave: m.chave,
+              nome: m.nome,
+              unidade: m.unidade,
+              tipo: m.tipo,
+            })),
+          },
         },
         select: sensorSelect,
       });
@@ -252,6 +255,92 @@ export class SensoresService {
     const ativo = acessos?.get(sensor.codigo_sensor);
     return toDto(
       sensor,
+      !acessos
+        ? null
+        : ativo === undefined
+          ? 'sem_acesso'
+          : ativo
+            ? 'ativo'
+            : 'inativo',
+    );
+  }
+
+  /**
+   * Substitui a lista de dados do sensor: itens com id são atualizados, sem
+   * id são criados e os que faltarem são removidos. Um dado com valores
+   * gravados não pode ser removido (o histórico seria apagado em cascata).
+   */
+  async alterarMedidas(user: JwtPayload, id: number, medidas: MedidaEntrada[]) {
+    const sensor = await this.carregar(user, id);
+    const atuais = new Map(sensor.medidas.map((m) => [m.id, m]));
+
+    const desconhecida = medidas.find(
+      (m) => m.id !== undefined && !atuais.has(m.id),
+    );
+    if (desconhecida)
+      throw new BadRequestException(
+        `O dado "${desconhecida.nome}" não pertence a este sensor.`,
+      );
+
+    const mantidas = new Set(medidas.map((m) => m.id).filter(Boolean));
+    const removidas = sensor.medidas.filter((m) => !mantidas.has(m.id));
+    if (removidas.length) {
+      const comValores = await this.prisma.leituras_valores.groupBy({
+        by: ['medida_id'],
+        where: { medida_id: { in: removidas.map((m) => m.id) } },
+      });
+      if (comValores.length) {
+        const nomes = removidas
+          .filter((m) => comValores.some((v) => v.medida_id === m.id))
+          .map((m) => `"${m.nome}"`)
+          .join(', ');
+        throw new ConflictException(
+          `Não é possível remover ${nomes}: já há leituras gravadas. Renomeie o dado em vez de removê-lo.`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.sensor_medidas.deleteMany({
+        where: { id: { in: removidas.map((m) => m.id) } },
+      });
+      const existentes = medidas.filter((m) => m.id !== undefined);
+      // chaves temporárias evitam conflito do UNIQUE ao trocar chaves entre dados
+      for (const m of existentes)
+        await tx.sensor_medidas.update({
+          where: { id: m.id },
+          data: { chave: `__${m.id}` },
+        });
+      for (const m of existentes)
+        await tx.sensor_medidas.update({
+          where: { id: m.id },
+          data: {
+            chave: m.chave,
+            nome: m.nome,
+            unidade: m.unidade,
+            tipo: m.tipo,
+          },
+        });
+      const novas = medidas.filter((m) => m.id === undefined);
+      if (novas.length)
+        await tx.sensor_medidas.createMany({
+          data: novas.map((m) => ({
+            sensor_id: id,
+            chave: m.chave,
+            nome: m.nome,
+            unidade: m.unidade,
+            tipo: m.tipo,
+          })),
+        });
+    });
+    // a ingestão guarda as chaves do sensor em cache
+    await this.redis.remover(chaveSensor(sensor.codigo_sensor));
+
+    const atualizado = await this.carregar(user, id);
+    const acessos = await this.acessos();
+    const ativo = acessos?.get(atualizado.codigo_sensor);
+    return toDto(
+      atualizado,
       !acessos
         ? null
         : ativo === undefined

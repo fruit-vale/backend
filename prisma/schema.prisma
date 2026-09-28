@@ -19,19 +19,20 @@ model alertas_climaticos {
 }
 
 model culturas {
-  id                      Int             @id @default(autoincrement())
-  nome                    String          @db.VarChar(50)
-  variedade               String?         @db.VarChar(50)
-  temp_recomendada_min    Decimal?        @db.Decimal(5, 2)
-  temp_recomendada_max    Decimal?        @db.Decimal(5, 2)
-  umidade_recomendada_min Decimal?        @db.Decimal(5, 2)
-  umidade_recomendada_max Decimal?        @db.Decimal(5, 2)
+  id                      Int              @id @default(autoincrement())
+  nome                    String           @db.VarChar(50)
+  variedade               String?          @db.VarChar(50)
+  temp_recomendada_min    Decimal?         @db.Decimal(5, 2)
+  temp_recomendada_max    Decimal?         @db.Decimal(5, 2)
+  umidade_recomendada_min Decimal?         @db.Decimal(5, 2)
+  umidade_recomendada_max Decimal?         @db.Decimal(5, 2)
   ciclo_medio_dias        Int?
   descricao               String?
   empresa_id              Int?
+  ciclos_cultivo          ciclos_cultivo[]
   dados_mercado           dados_mercado[]
   lotes                   lotes[]
-  empresas                empresas?       @relation(fields: [empresa_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  empresas                empresas?        @relation(fields: [empresa_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([empresa_id], map: "idx_culturas_empresa")
 }
@@ -74,16 +75,17 @@ model informacoes_logisticas {
 }
 
 model leituras_sensores {
-  id           BigInt   @id @default(autoincrement())
+  id           BigInt             @id @default(autoincrement())
   sensor_id    Int
-  data_hora    DateTime @default(now()) @db.Timestamp(6)
-  temperatura  Decimal? @db.Decimal(5, 2)
-  umidade      Decimal? @db.Decimal(5, 2)
-  ph           Decimal? @db.Decimal(6, 2)
-  luminosidade Decimal? @db.Decimal(8, 2)
-  precipitacao Decimal? @db.Decimal(5, 2)
-  umidade_solo Decimal? @db.Decimal(5, 2)
-  sensores     sensores @relation(fields: [sensor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  data_hora    DateTime           @default(now()) @db.Timestamp(6)
+  temperatura  Decimal?           @db.Decimal(5, 2)
+  umidade      Decimal?           @db.Decimal(5, 2)
+  ph           Decimal?           @db.Decimal(6, 2)
+  luminosidade Decimal?           @db.Decimal(8, 2)
+  precipitacao Decimal?           @db.Decimal(5, 2)
+  umidade_solo Decimal?           @db.Decimal(5, 2)
+  valores      leituras_valores[]
+  sensores     sensores           @relation(fields: [sensor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([sensor_id, data_hora], map: "idx_leituras_sensor_data")
 }
@@ -99,6 +101,7 @@ model lotes {
   situacao           String?              @default("EM_CULTIVO") @db.VarChar(20)
   geometria          Json?
   alertas_climaticos alertas_climaticos[]
+  ciclos_cultivo     ciclos_cultivo[]
   culturas           culturas             @relation(fields: [cultura_id], references: [id], onUpdate: NoAction)
   propriedades       propriedades         @relation(fields: [propriedade_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   sensores           sensores[]
@@ -137,6 +140,7 @@ model sensores {
   status             String?              @default("ATIVO") @db.VarChar(15)
   alertas_climaticos alertas_climaticos[]
   leituras_sensores  leituras_sensores[]
+  medidas            sensor_medidas[]
   lotes              lotes?               @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
   propriedades       propriedades         @relation(fields: [propriedade_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -157,4 +161,50 @@ model usuarios {
   created_at   DateTime?      @default(now()) @db.Timestamp(6)
   propriedades propriedades[]
   empresas     empresas?      @relation(fields: [empresa_id], references: [id], onUpdate: NoAction)
+}
+
+/// Dados que cada sensor envia (definidos pelo produtor). chave = campo no JSON do MQTT.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sensor_medidas {
+  id        Int                @id @default(autoincrement())
+  sensor_id Int
+  chave     String             @db.VarChar(40)
+  nome      String             @db.VarChar(60)
+  unidade   String?            @db.VarChar(20)
+  tipo      String             @default("OUTRO") @db.VarChar(20)
+  valores   leituras_valores[]
+  sensores  sensores           @relation(fields: [sensor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([sensor_id, chave], map: "sensor_medidas_sensor_chave_key")
+}
+
+/// Valor de cada dado em cada leitura (uma leitura = uma mensagem recebida).
+model leituras_valores {
+  leitura_id BigInt
+  medida_id  Int
+  valor      Decimal           @db.Decimal(14, 4)
+  leituras   leituras_sensores @relation(fields: [leitura_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medidas    sensor_medidas    @relation(fields: [medida_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([leitura_id, medida_id])
+  @@index([medida_id], map: "idx_leituras_valores_medida")
+}
+
+/// Histórico de cultivo: cada safra do lote. data_colheita null = em andamento (uma por lote).
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ciclos_cultivo {
+  id                Int       @id @default(autoincrement())
+  lote_id           Int
+  cultura_id        Int
+  data_plantio      DateTime? @db.Date
+  previsao_colheita DateTime? @db.Date
+  data_colheita     DateTime? @db.Date
+  producao          Decimal?  @db.Decimal(12, 2)
+  unidade_producao  String?   @db.VarChar(20)
+  observacoes       String?
+  criado_em         DateTime  @default(now()) @db.Timestamp(6)
+  culturas          culturas  @relation(fields: [cultura_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lotes             lotes     @relation(fields: [lote_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([lote_id], map: "idx_ciclos_cultivo_lote")
 }

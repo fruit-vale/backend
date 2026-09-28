@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser, Roles, type JwtPayload } from '../auth/decorators.js';
 import { data, texto } from '../common/validacao.js';
+import { lerMedidas } from './medidas.js';
 import {
   STATUS_SENSOR,
   SensoresService,
@@ -68,6 +69,7 @@ export class SensoresController {
       tipo: texto(body, 'tipo', { max: 50 })!,
       lote_id: lerLoteId(body?.lote_id),
       data_instalacao: data(body, 'data_instalacao'),
+      medidas: lerMedidas(body?.medidas),
     });
   }
 
@@ -78,6 +80,16 @@ export class SensoresController {
     @CurrentUser() user: JwtPayload,
   ) {
     return this.sensores.alterarStatus(user, id, lerStatus(body?.status));
+  }
+
+  /** Substitui a lista de dados que o sensor envia. */
+  @Patch(':id/medidas')
+  alterarMedidas(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.sensores.alterarMedidas(user, id, lerMedidas(body?.medidas));
   }
 
   @Post(':id/senha')

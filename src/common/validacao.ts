@@ -29,6 +29,10 @@ const ROTULOS: Record<string, string> = {
   latitude: 'Latitude',
   longitude: 'Longitude',
   area_total_ha: 'Área total (ha)',
+  data_colheita: 'Data de colheita',
+  producao: 'Produção',
+  unidade_producao: 'Unidade da produção',
+  observacoes: 'Observações',
 };
 
 const rotulo = (campo: string) => ROTULOS[campo] ?? campo;

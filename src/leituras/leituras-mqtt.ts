@@ -1,5 +1,7 @@
 // Formato das leituras publicadas pelos sensores no broker
 
+import { COLUNA_FIXA, type TipoMedida } from '../sensores/medidas.js';
+
 /** Tópico em que cada sensor publica: empresas/{id}/sensores/{codigo}/leituras */
 export const topicoLeituras = (empresaId: number, codigo: string) =>
   `empresas/${empresaId}/sensores/${codigo}/leituras`;
@@ -15,24 +17,36 @@ export function lerTopico(topico: string) {
   return match ? { empresaId: Number(match[1]), codigo: match[2] } : null;
 }
 
-// limites das colunas DECIMAL(p, 2) de leituras_sensores
-const MEDIDAS = {
-  temperatura: 1_000,
-  umidade: 1_000,
-  ph: 10_000,
-  luminosidade: 1_000_000,
-  precipitacao: 1_000,
-  umidade_solo: 1_000,
-} as const;
+/** Dado configurado no sensor, como a ingestão precisa dele. */
+export interface MedidaIngestao {
+  id: number;
+  chave: string;
+  tipo: TipoMedida;
+}
 
-export type Medida = keyof typeof MEDIDAS;
-export type Leitura = Partial<Record<Medida, number>> & { data_hora: Date };
+export interface Leitura {
+  data_hora: Date;
+  /** um valor por dado configurado presente na mensagem */
+  valores: { medida_id: number; valor: number }[];
+  /** colunas fixas de leituras_sensores preenchidas pelo tipo do dado */
+  fixas: Partial<Record<string, number>>;
+  /** chaves da mensagem que não correspondem a nenhum dado do sensor */
+  ignoradas: string[];
+}
 
+// leituras_valores.valor é NUMERIC(14, 4)
+const LIMITE_VALOR = 10_000_000_000;
 // leituras com horário muito no futuro indicam relógio errado no sensor
 const TOLERANCIA_FUTURO_MS = 5 * 60_000;
 
-/** Valida o JSON publicado; devolve a leitura ou a razão da recusa. */
-export function lerLeitura(payload: Buffer): Leitura | string {
+/**
+ * Valida o JSON publicado pelas chaves dos dados do sensor
+ * (ex.: {"temp_ar": 25.3, "umid": 61}); devolve a leitura ou a razão da recusa.
+ */
+export function lerLeitura(
+  payload: Buffer,
+  medidas: MedidaIngestao[],
+): Leitura | string {
   let corpo: unknown;
   try {
     corpo = JSON.parse(payload.toString());
@@ -43,7 +57,14 @@ export function lerLeitura(payload: Buffer): Leitura | string {
     return 'payload deve ser um objeto JSON';
   const dados = corpo as Record<string, unknown>;
 
-  const leitura: Leitura = { data_hora: new Date() };
+  const leitura: Leitura = {
+    data_hora: new Date(),
+    valores: [],
+    fixas: {},
+    ignoradas: Object.keys(dados).filter(
+      (k) => k !== 'data_hora' && !medidas.some((m) => m.chave === k),
+    ),
+  };
   if (dados.data_hora !== undefined) {
     const data = new Date(dados.data_hora as string);
     if (typeof dados.data_hora !== 'string' || Number.isNaN(data.getTime()))
@@ -53,17 +74,28 @@ export function lerLeitura(payload: Buffer): Leitura | string {
     leitura.data_hora = data;
   }
 
-  let medidas = 0;
-  for (const [campo, limite] of Object.entries(MEDIDAS) as [Medida, number][]) {
-    const valor = dados[campo];
+  for (const medida of medidas) {
+    const valor = dados[medida.chave];
     if (valor === undefined || valor === null) continue;
     if (typeof valor !== 'number' || !Number.isFinite(valor))
-      return `${campo} deve ser um número`;
-    if (Math.abs(valor) >= limite) return `${campo} fora do intervalo`;
-    leitura[campo] = Math.round(valor * 100) / 100;
-    medidas++;
+      return `${medida.chave} deve ser um número`;
+    if (Math.abs(valor) >= LIMITE_VALOR)
+      return `${medida.chave} fora do intervalo`;
+    leitura.valores.push({
+      medida_id: medida.id,
+      valor: Math.round(valor * 10_000) / 10_000,
+    });
+
+    // primeiro dado de cada tipo conhecido também vai para a coluna fixa
+    const fixa = COLUNA_FIXA[medida.tipo];
+    if (
+      fixa &&
+      leitura.fixas[fixa.coluna] === undefined &&
+      Math.abs(valor) < fixa.limite
+    )
+      leitura.fixas[fixa.coluna] = Math.round(valor * 100) / 100;
   }
-  if (medidas === 0)
-    return `nenhuma medida informada (${Object.keys(MEDIDAS).join(', ')})`;
+  if (leitura.valores.length === 0)
+    return `nenhum dado do sensor na mensagem (chaves esperadas: ${medidas.map((m) => m.chave).join(', ') || 'nenhuma cadastrada'})`;
   return leitura;
 }

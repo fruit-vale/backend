@@ -102,7 +102,9 @@ export class CulturasService {
       where: { id, ...escopoCulturas(user) },
       select: {
         empresa_id: true,
-        _count: { select: { lotes: true, dados_mercado: true } },
+        _count: {
+          select: { lotes: true, dados_mercado: true, ciclos_cultivo: true },
+        },
       },
     });
     if (!cultura) throw new NotFoundException('Cultura não encontrada.');
@@ -182,10 +184,10 @@ export class CulturasService {
 
   async remover(user: JwtPayload, id: number) {
     const cultura = await this.editavel(user, id);
-    const { lotes, dados_mercado } = cultura._count;
-    if (lotes || dados_mercado)
+    const { lotes, dados_mercado, ciclos_cultivo } = cultura._count;
+    if (lotes || dados_mercado || ciclos_cultivo)
       throw new ConflictException(
-        `A cultura está em uso (${lotes} lote(s), ${dados_mercado} registro(s) de mercado) e não pode ser excluída.`,
+        `A cultura está em uso (${lotes} lote(s), ${ciclos_cultivo} safra(s) no histórico, ${dados_mercado} registro(s) de mercado) e não pode ser excluída.`,
       );
     await this.prisma.culturas.delete({ where: { id } });
   }

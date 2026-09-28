@@ -47,7 +47,15 @@ const loteSelect = {
     },
   },
   culturas: { select: { id: true, nome: true, variedade: true } },
-  _count: { select: { sensores: true, alertas_climaticos: true } },
+  // safra em andamento (no máximo uma, garantido por índice único)
+  ciclos_cultivo: {
+    where: { data_colheita: null },
+    select: { id: true },
+    take: 1,
+  },
+  _count: {
+    select: { sensores: true, alertas_climaticos: true, ciclos_cultivo: true },
+  },
 } as const;
 
 type LoteRow = Prisma.lotesGetPayload<{ select: typeof loteSelect }>;
@@ -72,10 +80,24 @@ function toDto(lote: LoteRow) {
     cultura: lote.culturas,
     total_sensores: lote._count.sensores,
     total_alertas: lote._count.alertas_climaticos,
+    safra_atual_id: lote.ciclos_cultivo[0]?.id ?? null,
+    total_safras: lote._count.ciclos_cultivo,
   };
 }
 
 const DIA_MS = 86_400_000;
+
+/** Sem previsão informada, estima pelo ciclo médio da cultura. */
+export function estimarColheita(
+  plantio: Date | null,
+  previsao: Date | null,
+  cicloDias: number | null,
+) {
+  if (previsao) return previsao;
+  return plantio && cicloDias
+    ? new Date(plantio.getTime() + cicloDias * DIA_MS)
+    : null;
+}
 
 @Injectable()
 export class LotesService {
@@ -153,13 +175,12 @@ export class LotesService {
       );
   }
 
-  /** Sem previsão informada, estima pelo ciclo médio da cultura. */
   private dadosGravacao(dados: DadosLote, cicloDias: number | null) {
-    const previsao =
-      dados.previsao_colheita ??
-      (dados.data_plantio && cicloDias
-        ? new Date(dados.data_plantio.getTime() + cicloDias * DIA_MS)
-        : null);
+    const previsao = estimarColheita(
+      dados.data_plantio,
+      dados.previsao_colheita,
+      cicloDias,
+    );
     return {
       nome_identificacao: dados.nome_identificacao,
       propriedade_id: dados.propriedade_id,
@@ -175,34 +196,93 @@ export class LotesService {
     };
   }
 
+  /** O lote nasce com a primeira safra do histórico, em andamento. */
   async criar(user: JwtPayload, dados: DadosLote) {
+    if (dados.situacao === 'COLHIDO')
+      throw new BadRequestException(
+        'Um lote novo começa em preparo ou em cultivo; a colheita é registrada no histórico.',
+      );
     const ciclo = await this.validarVinculos(user, dados);
     await this.garantirNomeUnico(dados);
-    const lote = await this.prisma.lotes.create({
-      data: this.dadosGravacao(dados, ciclo),
-      select: loteSelect,
+    const gravacao = this.dadosGravacao(dados, ciclo);
+
+    const lote = await this.prisma.$transaction(async (tx) => {
+      const criado = await tx.lotes.create({
+        data: gravacao,
+        select: { id: true },
+      });
+      await tx.ciclos_cultivo.create({
+        data: {
+          lote_id: criado.id,
+          cultura_id: gravacao.cultura_id,
+          data_plantio: gravacao.data_plantio,
+          previsao_colheita: gravacao.previsao_colheita,
+        },
+      });
+      return tx.lotes.findUniqueOrThrow({
+        where: { id: criado.id },
+        select: loteSelect,
+      });
     });
     return toDto(lote);
   }
 
+  /**
+   * Cultura, datas e situação do lote espelham a safra em andamento: com uma
+   * aberta, são atualizadas nas duas; sem ela (lote colhido), ficam como estão
+   * até uma nova safra ser iniciada no histórico.
+   */
   async alterar(user: JwtPayload, id: number, dados: DadosLote) {
-    await this.buscar(user, id);
-    const ciclo = await this.validarVinculos(user, dados);
-    await this.garantirNomeUnico(dados, id);
-    const lote = await this.prisma.lotes.update({
-      where: { id },
-      data: this.dadosGravacao(dados, ciclo),
-      select: loteSelect,
+    const atual = await this.buscar(user, id);
+    const safraId = atual.ciclos_cultivo[0]?.id;
+    if (safraId && dados.situacao === 'COLHIDO')
+      throw new BadRequestException(
+        'Para encerrar a safra, use "Registrar colheita" no histórico do lote.',
+      );
+    const efetivos: DadosLote = safraId
+      ? dados
+      : {
+          ...dados,
+          cultura_id: atual.culturas.id,
+          data_plantio: atual.data_plantio,
+          previsao_colheita: atual.previsao_colheita,
+          situacao: (atual.situacao ?? 'COLHIDO') as SituacaoLote,
+        };
+
+    const ciclo = await this.validarVinculos(user, efetivos);
+    await this.garantirNomeUnico(efetivos, id);
+    const gravacao = this.dadosGravacao(efetivos, ciclo);
+
+    const lote = await this.prisma.$transaction(async (tx) => {
+      if (safraId)
+        await tx.ciclos_cultivo.update({
+          where: { id: safraId },
+          data: {
+            cultura_id: gravacao.cultura_id,
+            data_plantio: gravacao.data_plantio,
+            previsao_colheita: gravacao.previsao_colheita,
+          },
+        });
+      return tx.lotes.update({
+        where: { id },
+        data: gravacao,
+        select: loteSelect,
+      });
     });
     return toDto(lote);
   }
 
   async remover(user: JwtPayload, id: number) {
     const lote = await this.buscar(user, id);
-    // a FK apaga os alertas do lote em cascata
+    // a FK apaga os alertas e o histórico do lote em cascata
     if (lote._count.alertas_climaticos > 0)
       throw new ConflictException(
-        `O lote tem ${lote._count.alertas_climaticos} alerta(s) registrado(s). Marque-o como colhido em vez de excluir.`,
+        `O lote tem ${lote._count.alertas_climaticos} alerta(s) registrado(s) e não pode ser excluído.`,
+      );
+    const encerradas = lote._count.ciclos_cultivo - lote.ciclos_cultivo.length;
+    if (encerradas > 0)
+      throw new ConflictException(
+        `O lote tem ${encerradas} safra(s) no histórico e não pode ser excluído.`,
       );
     await this.prisma.lotes.delete({ where: { id } });
   }
