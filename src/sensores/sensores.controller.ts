@@ -34,9 +34,9 @@ function lerIdentificador(valor: unknown) {
   return identificador;
 }
 
-function lerPropriedadeId(valor: unknown) {
+function lerLoteId(valor: unknown) {
   if (!Number.isInteger(valor))
-    throw new BadRequestException('Selecione a propriedade do sensor.');
+    throw new BadRequestException('Selecione o lote do sensor.');
   return valor as number;
 }
 
@@ -66,7 +66,7 @@ export class SensoresController {
     return this.sensores.criar(user, {
       identificador: lerIdentificador(body?.identificador),
       tipo: texto(body, 'tipo', { max: 50 })!,
-      propriedade_id: lerPropriedadeId(body?.propriedade_id),
+      lote_id: lerLoteId(body?.lote_id),
       data_instalacao: data(body, 'data_instalacao'),
     });
   }

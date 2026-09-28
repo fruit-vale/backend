@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { JwtPayload } from '../auth/decorators.js';
-import { escopoPropriedades, escopoSensores } from '../auth/escopo.js';
+import { escopoLotes, escopoSensores } from '../auth/escopo.js';
 import {
   DispositivosService,
   gerarSenha,
@@ -30,7 +30,8 @@ const TRANSACAO = { timeout: 15_000 };
 export interface NovoSensor {
   identificador: string;
   tipo: string;
-  propriedade_id: number;
+  /** O sensor fica num lote; a propriedade vem dele. */
+  lote_id: number;
   data_instalacao: Date | null;
 }
 
@@ -48,6 +49,7 @@ const sensorSelect = {
       empresas: { select: { id: true, razao_social: true } },
     },
   },
+  lotes: { select: { id: true, nome_identificacao: true } },
   _count: { select: { leituras_sensores: true } },
 } as const;
 
@@ -63,6 +65,7 @@ type SensorRow = {
     empresa_id: number;
     empresas: { id: number; razao_social: string };
   };
+  lotes: { id: number; nome_identificacao: string } | null;
   _count: { leituras_sensores: number };
 };
 
@@ -77,14 +80,27 @@ function toDto(sensor: SensorRow, acesso: AcessoMqtt) {
     status: (sensor.status ?? 'ATIVO') as StatusSensor,
     data_instalacao: dataIso(sensor.data_instalacao),
     propriedade: { id: sensor.propriedades.id, nome: sensor.propriedades.nome },
+    // sensores antigos podem não ter lote
+    lote: sensor.lotes && {
+      id: sensor.lotes.id,
+      nome: sensor.lotes.nome_identificacao,
+    },
     empresa: sensor.propriedades.empresas,
     total_leituras: sensor._count.leituras_sensores,
     acesso_mqtt: acesso,
   };
 }
 
-const descricao = (sensor: { tipo: string }, propriedade: { nome: string }) =>
-  `${sensor.tipo} · ${propriedade.nome}`.slice(0, 100);
+/** Descrição do login no broker: tipo · lote (propriedade). */
+const descricao = (
+  sensor: { tipo: string },
+  propriedade: { nome: string },
+  lote?: { nome_identificacao: string } | null,
+) =>
+  (lote
+    ? `${sensor.tipo} · ${lote.nome_identificacao} (${propriedade.nome})`
+    : `${sensor.tipo} · ${propriedade.nome}`
+  ).slice(0, 100);
 
 /**
  * Sensores do banco, cada um com um login MQTT de mesmo nome (codigo_sensor).
@@ -151,12 +167,16 @@ export class SensoresService {
 
   async criar(user: JwtPayload, dados: NovoSensor) {
     this.exigirPerfil(user);
-    const propriedade = await this.prisma.propriedades.findFirst({
-      where: { id: dados.propriedade_id, ...escopoPropriedades(user) },
-      select: { id: true, nome: true, empresa_id: true },
+    const lote = await this.prisma.lotes.findFirst({
+      where: { id: dados.lote_id, ...escopoLotes(user) },
+      select: {
+        id: true,
+        nome_identificacao: true,
+        propriedades: { select: { id: true, nome: true, empresa_id: true } },
+      },
     });
-    if (!propriedade)
-      throw new BadRequestException('Propriedade não encontrada.');
+    if (!lote) throw new BadRequestException('Lote não encontrado.');
+    const propriedade = lote.propriedades;
 
     // o prefixo da empresa evita conflito de nomes entre empresas no broker
     const codigo = `emp${propriedade.empresa_id}-${dados.identificador}`;
@@ -182,6 +202,7 @@ export class SensoresService {
           codigo_sensor: codigo,
           tipo: dados.tipo,
           propriedade_id: propriedade.id,
+          lote_id: lote.id,
           data_instalacao: dados.data_instalacao,
           status: 'ATIVO',
         },
@@ -190,7 +211,7 @@ export class SensoresService {
       await this.dynsec.criarCliente({
         username: codigo,
         password: senha,
-        textname: descricao(dados, propriedade),
+        textname: descricao(dados, propriedade, lote),
         roles: [roleEmpresa(propriedade.empresa_id)],
       });
       return criado;
@@ -260,7 +281,13 @@ export class SensoresService {
       await this.dynsec.criarCliente({
         username,
         password: senha,
-        textname: descricao(sensor, sensor.propriedades),
+        textname: descricao(
+          sensor,
+          sensor.propriedades,
+          sensor.lotes && {
+            nome_identificacao: sensor.lotes.nome_identificacao,
+          },
+        ),
         roles: [roleEmpresa(empresaId)],
       });
       if (sensor.status === 'INATIVO')
