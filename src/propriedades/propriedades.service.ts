@@ -20,7 +20,8 @@ export interface DadosPropriedade {
   latitude: number | null;
   longitude: number | null;
   area_total_ha: number | null;
-  produtor_responsavel_id: number | null;
+  /** Opcional; ausente (undefined) mantém o responsável atual. */
+  produtor_responsavel_id?: number | null;
   status: StatusPropriedade;
 }
 
@@ -82,9 +83,9 @@ export class PropriedadesService {
   /** Responsável precisa ser um produtor da mesma empresa. */
   private async validarResponsavel(
     empresaId: number,
-    usuarioId: number | null,
+    usuarioId: number | null | undefined,
   ) {
-    if (usuarioId === null) return;
+    if (usuarioId === null || usuarioId === undefined) return;
     const usuario = await this.prisma.usuarios.findUnique({
       where: { id: usuarioId },
       select: { empresa_id: true, tipo_usuario: true },

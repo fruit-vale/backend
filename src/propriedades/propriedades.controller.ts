@@ -59,10 +59,11 @@ function lerPropriedade(body: Record<string, unknown>): DadosPropriedade {
     latitude,
     longitude,
     area_total_ha: numero(body, 'area_total_ha', { min: 0, max: 100_000_000 }),
-    produtor_responsavel_id: lerIdOpcional(
-      body?.produtor_responsavel_id,
-      'produtor_responsavel_id',
-    ),
+    // opcional: sem o campo, o responsável atual é mantido
+    produtor_responsavel_id:
+      body && 'produtor_responsavel_id' in body
+        ? lerIdOpcional(body.produtor_responsavel_id, 'produtor_responsavel_id')
+        : undefined,
     status,
   };
 }
