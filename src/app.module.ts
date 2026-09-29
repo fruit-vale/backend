@@ -7,6 +7,7 @@ import { EmpresasModule } from './empresas/empresas.module.js';
 import { LeiturasModule } from './leituras/leituras.module.js';
 import { LotesModule } from './lotes/lotes.module.js';
 import { MqttModule } from './mqtt/mqtt.module.js';
+import { PainelModule } from './painel/painel.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PropriedadesModule } from './propriedades/propriedades.module.js';
 import { RedisModule } from './redis/redis.module.js';
@@ -26,6 +27,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     CulturasModule,
     LotesModule,
     PropriedadesModule,
+    PainelModule,
   ],
   controllers: [AppController],
   providers: [AppService],
