@@ -25,7 +25,7 @@ services:
         - traefik.http.routers.fruitvale-api.rule=Host(`api.fruitvale.com.br`)
         - traefik.http.routers.fruitvale-api.entrypoints=websecure
         - traefik.http.routers.fruitvale-api.tls=true
-        - traefik.http.routers.fruitvale-api.tls.certresolver=letsencrypt
+        - traefik.http.routers.fruitvale-api.tls.certresolver=letsencryptresolver
         - traefik.http.services.fruitvale-api.loadbalancer.server.port=3000
 
   mosquitto:
@@ -73,7 +73,7 @@ services:
         - traefik.tcp.routers.fruitvale-mqtt.rule=HostSNI(`mqtt.fruitvale.com.br`)
         - traefik.tcp.routers.fruitvale-mqtt.entrypoints=mqtts
         - traefik.tcp.routers.fruitvale-mqtt.tls=true
-        - traefik.tcp.routers.fruitvale-mqtt.tls.certresolver=letsencrypt
+        - traefik.tcp.routers.fruitvale-mqtt.tls.certresolver=letsencryptresolver
         - traefik.tcp.routers.fruitvale-mqtt.service=fruitvale-mqtt
         - traefik.tcp.services.fruitvale-mqtt.loadbalancer.server.port=1883
 
@@ -81,7 +81,7 @@ services:
         - traefik.http.routers.fruitvale-mqtt-ws.rule=Host(`mqtt.fruitvale.com.br`)
         - traefik.http.routers.fruitvale-mqtt-ws.entrypoints=websecure
         - traefik.http.routers.fruitvale-mqtt-ws.tls=true
-        - traefik.http.routers.fruitvale-mqtt-ws.tls.certresolver=letsencrypt
+        - traefik.http.routers.fruitvale-mqtt-ws.tls.certresolver=letsencryptresolver
         - traefik.http.routers.fruitvale-mqtt-ws.service=fruitvale-mqtt-ws
         - traefik.http.services.fruitvale-mqtt-ws.loadbalancer.server.port=9001
 

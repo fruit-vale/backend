@@ -138,11 +138,19 @@ export class DynsecService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** Assina um filtro; uma recusa só é registrada, sem afetar os demais. */
   private async assinar(filtro: string) {
-    const [concedida] = await this.client!.subscribeAsync(filtro, { qos: 1 });
-    if (!concedida || concedida.qos === 128)
-      this.logger.error(`Broker negou a assinatura de ${filtro}.`);
-    else this.logger.log(`Assinando ${filtro}.`);
+    try {
+      const [concedida] = await this.client!.subscribeAsync(filtro, { qos: 1 });
+      if (!concedida || concedida.qos === 128)
+        this.logger.error(`Broker negou a assinatura de ${filtro}.`);
+      else this.logger.log(`Assinando ${filtro}.`);
+    } catch (erro) {
+      // o mqtt.js rejeita a promessa quando o SUBACK volta com 0x80 (negado)
+      this.logger.error(
+        `Broker negou a assinatura de ${filtro}: ${(erro as Error).message}`,
+      );
+    }
   }
 
   /**

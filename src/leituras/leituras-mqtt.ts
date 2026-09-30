@@ -6,9 +6,17 @@ import { COLUNA_FIXA, type TipoMedida } from '../sensores/medidas.js';
 export const topicoLeituras = (empresaId: number, codigo: string) =>
   `empresas/${empresaId}/sensores/${codigo}/leituras`;
 
-// $share: com várias réplicas da API, cada mensagem vai para uma só
-export const FILTRO_LEITURAS =
-  '$share/fruitvale-api/empresas/+/sensores/+/leituras';
+const TOPICO_LEITURAS = 'empresas/+/sensores/+/leituras';
+
+/**
+ * Filtro assinado pela API. Com uma réplica (o padrão), assina o tópico
+ * direto. Com várias, defina MQTT_GRUPO_COMPARTILHADO para usar uma assinatura
+ * compartilhada ($share), em que cada mensagem vai para uma réplica só — mas o
+ * broker precisa permitir: o Mosquitto de produção nega $share ao usuário da API.
+ */
+export const FILTRO_LEITURAS = process.env.MQTT_GRUPO_COMPARTILHADO
+  ? `$share/${process.env.MQTT_GRUPO_COMPARTILHADO}/${TOPICO_LEITURAS}`
+  : TOPICO_LEITURAS;
 
 const TOPICO = /^empresas\/(\d+)\/sensores\/([^/]+)\/leituras$/;
 
