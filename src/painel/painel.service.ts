@@ -31,6 +31,8 @@ const HORA_MS = 3_600_000;
 const DIA_MS = 24 * HORA_MS;
 // mais que isso deixa o gráfico ilegível
 const SERIES_MAX = 8;
+// leituras individuais devolvidas de uma vez (a tabela do modal)
+const LEITURAS_MAX = 2000;
 
 const num = (valor: { toNumber(): number } | null) => valor?.toNumber() ?? null;
 const fmt = (valor: number) =>
@@ -330,6 +332,54 @@ export class PainelService {
       series: [...series.values()]
         .sort((a, b) => b.pontos.length - a.pontos.length)
         .slice(0, SERIES_MAX),
+    };
+  }
+
+  /**
+   * Leituras individuais (cada mensagem recebida) de um tipo de dado, da mais
+   * recente para a mais antiga, até LEITURAS_MAX.
+   */
+  async leituras(user: JwtPayload, tipo: TipoMedida, dias: number) {
+    const sensores = await this.prisma.sensores.findMany({
+      where: { ...escopoSensores(user), medidas: { some: { tipo } } },
+      select: { id: true },
+    });
+    if (!sensores.length) return { tipo, limite: LEITURAS_MAX, leituras: [] };
+
+    const desde = new Date(Date.now() - dias * DIA_MS);
+    const linhas = await this.prisma.$queryRaw<
+      {
+        sensor: string;
+        lote: string | null;
+        dado: string;
+        unidade: string | null;
+        data_hora: Date;
+        valor: number;
+      }[]
+    >`
+      SELECT s.codigo_sensor AS sensor, l.nome_identificacao AS lote,
+             m.nome AS dado, m.unidade, ls.data_hora, v.valor::float8 AS valor
+      FROM leituras_valores v
+      JOIN leituras_sensores ls ON ls.id = v.leitura_id
+      JOIN sensor_medidas m ON m.id = v.medida_id
+      JOIN sensores s ON s.id = m.sensor_id
+      LEFT JOIN lotes l ON l.id = s.lote_id
+      WHERE m.tipo = ${tipo}
+        AND ls.data_hora >= ${desde}
+        AND s.id IN (${Prisma.join(sensores.map((s) => s.id))})
+      ORDER BY ls.data_hora DESC, ls.id DESC
+      LIMIT ${LEITURAS_MAX + 1}`;
+
+    return {
+      tipo,
+      limite: LEITURAS_MAX,
+      // há mais leituras no período do que as devolvidas
+      cortado: linhas.length > LEITURAS_MAX,
+      leituras: linhas.slice(0, LEITURAS_MAX).map((l) => ({
+        ...l,
+        data_hora: l.data_hora.toISOString(),
+        valor: Math.round(l.valor * 10_000) / 10_000,
+      })),
     };
   }
 }

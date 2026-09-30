@@ -5,6 +5,20 @@ import { PainelService } from './painel.service.js';
 
 const DIAS_MAX = 30;
 
+/** Tipo de dado e período (1 a 30 dias, padrão 7) dos filtros do painel. */
+function lerFiltro(tipo: string, dias?: string): [TipoMedida, number] {
+  if (!TIPOS_MEDIDA.includes(tipo as TipoMedida))
+    throw new BadRequestException(
+      `tipo inválido. Use: ${TIPOS_MEDIDA.join(', ')}.`,
+    );
+  const n = dias === undefined ? 7 : Number(dias);
+  if (!Number.isInteger(n) || n < 1 || n > DIAS_MAX)
+    throw new BadRequestException(
+      `dias deve ser um inteiro entre 1 e ${DIAS_MAX}.`,
+    );
+  return [tipo as TipoMedida, n];
+}
+
 @Controller('painel')
 @Roles('administrador', 'produtor', 'analista')
 export class PainelController {
@@ -16,6 +30,17 @@ export class PainelController {
     return this.painel.resumo(user);
   }
 
+  /** Leituras individuais: GET /painel/leituras?tipo=TEMPERATURA&dias=7 */
+  @Get('leituras')
+  leituras(
+    @CurrentUser() user: JwtPayload,
+    @Query('tipo') tipo: string,
+    @Query('dias') dias?: string,
+  ) {
+    const [t, n] = lerFiltro(tipo, dias);
+    return this.painel.leituras(user, t, n);
+  }
+
   /** Série do gráfico: GET /painel/serie?tipo=TEMPERATURA&dias=7 */
   @Get('serie')
   serie(
@@ -23,15 +48,7 @@ export class PainelController {
     @Query('tipo') tipo: string,
     @Query('dias') dias?: string,
   ) {
-    if (!TIPOS_MEDIDA.includes(tipo as TipoMedida))
-      throw new BadRequestException(
-        `tipo inválido. Use: ${TIPOS_MEDIDA.join(', ')}.`,
-      );
-    const n = dias === undefined ? 7 : Number(dias);
-    if (!Number.isInteger(n) || n < 1 || n > DIAS_MAX)
-      throw new BadRequestException(
-        `dias deve ser um inteiro entre 1 e ${DIAS_MAX}.`,
-      );
-    return this.painel.serie(user, tipo as TipoMedida, n);
+    const [t, n] = lerFiltro(tipo, dias);
+    return this.painel.serie(user, t, n);
   }
 }
