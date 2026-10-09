@@ -43,8 +43,8 @@ function lerSituacao(valor: unknown): SituacaoLote {
 
 /** O formulário envia o lote completo, na criação e na edição. */
 function lerLote(body: Record<string, unknown>): DadosLote {
-  // com geometria, a área vem do retângulo; sem ela, pode ser informada
-  const retangulo =
+  // com geometria, a área vem do contorno; sem ela, pode ser informada
+  const contorno =
     body?.geometria === undefined || body?.geometria === null
       ? null
       : lerGeometria(body.geometria);
@@ -55,9 +55,9 @@ function lerLote(body: Record<string, unknown>): DadosLote {
     data_plantio: data(body, 'data_plantio'),
     previsao_colheita: data(body, 'previsao_colheita'),
     situacao: lerSituacao(body?.situacao),
-    geometria: retangulo?.geometria ?? null,
+    geometria: contorno?.geometria ?? null,
     area_ha:
-      retangulo?.area_ha ??
+      contorno?.area_ha ??
       numero(body, 'area_ha', { min: 0, max: 100_000_000 }),
   };
 }

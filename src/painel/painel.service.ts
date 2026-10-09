@@ -17,6 +17,14 @@ import type { TipoMedida } from '../sensores/medidas.js';
  */
 export type StatusCultivo = 'normal' | 'atencao' | 'sem_dados' | 'sem_faixa';
 
+/** Recorte opcional dos sensores do gráfico e da tabela. */
+export type FiltroPainel = { propriedadeId?: number; loteId?: number };
+
+const filtroSensores = (f: FiltroPainel): Prisma.sensoresWhereInput => ({
+  ...(f.propriedadeId !== undefined && { propriedade_id: f.propriedadeId }),
+  ...(f.loteId !== undefined && { lote_id: f.loteId }),
+});
+
 // ordem de gravidade para resumir vários lotes de uma cultura
 const GRAVIDADE: Record<StatusCultivo, number> = {
   atencao: 3,
@@ -270,9 +278,18 @@ export class PainelService {
    * Média por hora (até 7 dias) ou por dia (mais que isso) de um tipo de
    * dado, uma série por sensor.
    */
-  async serie(user: JwtPayload, tipo: TipoMedida, dias: number) {
+  async serie(
+    user: JwtPayload,
+    tipo: TipoMedida,
+    dias: number,
+    filtro: FiltroPainel = {},
+  ) {
     const sensores = await this.prisma.sensores.findMany({
-      where: { ...escopoSensores(user), medidas: { some: { tipo } } },
+      where: {
+        ...escopoSensores(user),
+        ...filtroSensores(filtro),
+        medidas: { some: { tipo } },
+      },
       select: { id: true },
     });
     if (!sensores.length) return { tipo, unidade: null, series: [] };
@@ -339,9 +356,18 @@ export class PainelService {
    * Leituras individuais (cada mensagem recebida) de um tipo de dado, da mais
    * recente para a mais antiga, até LEITURAS_MAX.
    */
-  async leituras(user: JwtPayload, tipo: TipoMedida, dias: number) {
+  async leituras(
+    user: JwtPayload,
+    tipo: TipoMedida,
+    dias: number,
+    filtro: FiltroPainel = {},
+  ) {
     const sensores = await this.prisma.sensores.findMany({
-      where: { ...escopoSensores(user), medidas: { some: { tipo } } },
+      where: {
+        ...escopoSensores(user),
+        ...filtroSensores(filtro),
+        medidas: { some: { tipo } },
+      },
       select: { id: true },
     });
     if (!sensores.length) return { tipo, limite: LEITURAS_MAX, leituras: [] };
