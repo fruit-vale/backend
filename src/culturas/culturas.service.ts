@@ -18,6 +18,10 @@ export interface DadosCultura {
   umidade_recomendada_max: number | null;
   ciclo_medio_dias: number | null;
   descricao: string | null;
+  /** abaixo dela a planta não se desenvolve (°C) */
+  temp_base_graus_dia: number | null;
+  /** graus-dia somados do plantio à colheita */
+  graus_dia_ciclo: number | null;
 }
 
 /** null = cultura da plataforma (visível a todas as empresas). */
@@ -33,6 +37,8 @@ const culturaSelect = {
   umidade_recomendada_max: true,
   ciclo_medio_dias: true,
   descricao: true,
+  temp_base_graus_dia: true,
+  graus_dia_ciclo: true,
   empresas: { select: { id: true, razao_social: true } },
   _count: { select: { lotes: true } },
 } as const;
@@ -48,6 +54,8 @@ type CulturaRow = {
   umidade_recomendada_max: Decimal;
   ciclo_medio_dias: number | null;
   descricao: string | null;
+  temp_base_graus_dia: Decimal;
+  graus_dia_ciclo: number | null;
   empresas: { id: number; razao_social: string } | null;
   _count: { lotes: number };
 };
@@ -62,6 +70,7 @@ function toDto({ _count, empresas, ...c }: CulturaRow) {
     temp_recomendada_max: num(c.temp_recomendada_max),
     umidade_recomendada_min: num(c.umidade_recomendada_min),
     umidade_recomendada_max: num(c.umidade_recomendada_max),
+    temp_base_graus_dia: num(c.temp_base_graus_dia),
     total_lotes: _count.lotes,
   };
 }

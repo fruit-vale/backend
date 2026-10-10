@@ -29,6 +29,8 @@ model culturas {
   ciclo_medio_dias        Int?
   descricao               String?
   empresa_id              Int?
+  temp_base_graus_dia     Decimal?         @db.Decimal(5, 2)
+  graus_dia_ciclo         Int?
   ciclos_cultivo          ciclos_cultivo[]
   dados_mercado           dados_mercado[]
   lotes                   lotes[]

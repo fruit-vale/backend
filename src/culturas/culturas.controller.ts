@@ -44,6 +44,15 @@ function lerCultura(body: Record<string, unknown>): DadosCultura {
       inteiro: true,
     }),
     descricao: texto(body, 'descricao', { obrigatorio: false, max: 2000 }),
+    temp_base_graus_dia: numero(body, 'temp_base_graus_dia', {
+      min: -50,
+      max: 50,
+    }),
+    graus_dia_ciclo: numero(body, 'graus_dia_ciclo', {
+      min: 1,
+      max: 100_000,
+      inteiro: true,
+    }),
   };
 }
 

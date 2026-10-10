@@ -20,6 +20,8 @@ const ROTULOS: Record<string, string> = {
   umidade_recomendada_min: 'Umidade mínima',
   umidade_recomendada_max: 'Umidade máxima',
   ciclo_medio_dias: 'Ciclo médio (dias)',
+  temp_base_graus_dia: 'Temperatura base',
+  graus_dia_ciclo: 'Graus-dia do ciclo',
   nome_identificacao: 'Identificação do lote',
   data_plantio: 'Data de plantio',
   previsao_colheita: 'Previsão de colheita',
