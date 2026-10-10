@@ -83,6 +83,16 @@ export class SensoresController {
   }
 
   /** Substitui a lista de dados que o sensor envia. */
+  /** Muda o sensor de lote: PATCH /sensores/:id/lote { lote_id } */
+  @Patch(':id/lote')
+  moverParaLote(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: Record<string, unknown>,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.sensores.moverParaLote(user, id, lerLoteId(body?.lote_id));
+  }
+
   @Patch(':id/medidas')
   alterarMedidas(
     @Param('id', ParseIntPipe) id: number,

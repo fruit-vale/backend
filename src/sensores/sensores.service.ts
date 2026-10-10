@@ -232,6 +232,52 @@ export class SensoresService {
     };
   }
 
+  /**
+   * Leva o sensor para outro lote da mesma empresa (ex.: na safra seguinte,
+   * depois da colheita). O login e o tópico MQTT são da empresa, por isso não
+   * mudam; o histórico de leituras continua com o sensor.
+   */
+  async moverParaLote(user: JwtPayload, id: number, loteId: number) {
+    const atual = await this.carregar(user, id);
+    const lote = await this.prisma.lotes.findFirst({
+      where: { id: loteId, ...escopoLotes(user) },
+      select: {
+        id: true,
+        situacao: true,
+        propriedades: { select: { id: true, empresa_id: true } },
+      },
+    });
+    if (!lote) throw new BadRequestException('Lote não encontrado.');
+    if (lote.propriedades.empresa_id !== atual.propriedades.empresa_id)
+      throw new BadRequestException(
+        'O lote precisa ser da mesma empresa do sensor.',
+      );
+    if (lote.situacao === 'COLHIDO')
+      throw new BadRequestException(
+        'Este lote já foi colhido. Inicie uma nova safra nele ou escolha outro lote.',
+      );
+
+    const sensor = await this.prisma.sensores.update({
+      where: { id },
+      data: { lote_id: lote.id, propriedade_id: lote.propriedades.id },
+      select: sensorSelect,
+    });
+    await this.redis.remover(chaveSensor(sensor.codigo_sensor));
+
+    const acessos = await this.acessos();
+    const ativo = acessos?.get(sensor.codigo_sensor);
+    return toDto(
+      sensor,
+      !acessos
+        ? null
+        : ativo === undefined
+          ? 'sem_acesso'
+          : ativo
+            ? 'ativo'
+            : 'inativo',
+    );
+  }
+
   async alterarStatus(user: JwtPayload, id: number, status: StatusSensor) {
     const atual = await this.carregar(user, id);
 

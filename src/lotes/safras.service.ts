@@ -7,7 +7,10 @@ import {
 import type { JwtPayload } from '../auth/decorators.js';
 import { dataIso } from '../common/validacao.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { chaveSensor } from '../leituras/ingestao.service.js';
+import { DynsecService } from '../mqtt/dynsec.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RedisService } from '../redis/redis.service.js';
 import { LotesService, estimarColheita } from './lotes.service.js';
 
 export interface Colheita {
@@ -92,6 +95,9 @@ function validarDatas(
     throw new BadRequestException('A colheita não pode ser antes do plantio.');
 }
 
+// a transação também espera o broker desativar os logins dos sensores
+const TRANSACAO = { timeout: 15_000 };
+
 /**
  * Histórico de cultivo do lote. Cada safra vai do plantio à colheita; a que
  * está em andamento é espelhada nas colunas do próprio lote (cultura, datas,
@@ -102,6 +108,8 @@ export class SafrasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lotes: LotesService,
+    private readonly dynsec: DynsecService,
+    private readonly redis: RedisService,
   ) {}
 
   /** Lote no escopo do usuário, com o que o histórico precisa. */
@@ -152,13 +160,23 @@ export class SafrasService {
     return safras.map((s) => toDto(s, lote.areaHa));
   }
 
-  /** Encerra a safra em andamento; o lote fica como colhido. */
+  /**
+   * Encerra a safra em andamento; o lote fica como colhido. Os sensores do
+   * lote ficam inativos (login MQTT bloqueado) e saem dele, mas as leituras
+   * continuam guardadas no histórico.
+   */
   async colher(user: JwtPayload, loteId: number, dados: Colheita) {
     const lote = await this.lote(user, loteId);
     if (!lote.safraAtualId)
       throw new ConflictException('Não há safra em andamento neste lote.');
     const atual = await this.safra(loteId, lote.safraAtualId);
     validarDatas(atual.data_plantio, null, dados.data_colheita);
+    const sensores = await this.prisma.sensores.findMany({
+      where: { lote_id: loteId },
+      select: { codigo_sensor: true },
+      orderBy: { codigo_sensor: 'asc' },
+    });
+    const codigos = sensores.map((s) => s.codigo_sensor);
 
     const safra = await this.prisma.$transaction(async (tx) => {
       const encerrada = await tx.ciclos_cultivo.update({
@@ -175,9 +193,22 @@ export class SafrasService {
         where: { id: loteId },
         data: { situacao: 'COLHIDO' },
       });
+      await tx.sensores.updateMany({
+        where: { lote_id: loteId },
+        data: { status: 'INATIVO', lote_id: null },
+      });
+      // dentro da transação: se o broker falhar, nada é gravado
+      for (const codigo of codigos)
+        await this.dynsec
+          .ativarCliente(codigo, false)
+          .catch((erro: unknown) => {
+            if (!(erro instanceof NotFoundException)) throw erro;
+          });
       return encerrada;
-    });
-    return toDto(safra, lote.areaHa);
+    }, TRANSACAO);
+    // a ingestão guarda o sensor em cache: sem isso, ainda gravaria por até 60 s
+    await Promise.all(codigos.map((c) => this.redis.remover(chaveSensor(c))));
+    return { ...toDto(safra, lote.areaHa), sensores_desativados: codigos };
   }
 
   /** Abre a próxima safra (com a mesma cultura ou outra). */
