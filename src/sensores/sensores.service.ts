@@ -86,6 +86,17 @@ function toDto(sensor: SensorRow, acesso: AcessoMqtt) {
   };
 }
 
+/** Sensor só entra em lote em cultivo (nem em preparo, nem já colhido). */
+function exigirEmCultivo(situacao: string | null) {
+  // nulo vale como em cultivo, como nas telas (padrão da coluna)
+  if ((situacao ?? 'EM_CULTIVO') === 'EM_CULTIVO') return;
+  throw new BadRequestException(
+    situacao === 'COLHIDO'
+      ? 'Este lote já foi colhido. Inicie uma nova safra nele ou escolha um lote em cultivo.'
+      : 'O lote ainda está em preparo. Mude a situação para "Em cultivo" ou escolha um lote em cultivo.',
+  );
+}
+
 /** Descrição do login no broker: tipo · lote (propriedade). */
 const descricao = (
   sensor: { tipo: string },
@@ -167,10 +178,12 @@ export class SensoresService {
       select: {
         id: true,
         nome_identificacao: true,
+        situacao: true,
         propriedades: { select: { id: true, nome: true, empresa_id: true } },
       },
     });
     if (!lote) throw new BadRequestException('Lote não encontrado.');
+    exigirEmCultivo(lote.situacao);
     const propriedade = lote.propriedades;
 
     // o prefixo da empresa evita conflito de nomes entre empresas no broker
@@ -252,10 +265,7 @@ export class SensoresService {
       throw new BadRequestException(
         'O lote precisa ser da mesma empresa do sensor.',
       );
-    if (lote.situacao === 'COLHIDO')
-      throw new BadRequestException(
-        'Este lote já foi colhido. Inicie uma nova safra nele ou escolha outro lote.',
-      );
+    exigirEmCultivo(lote.situacao);
 
     const sensor = await this.prisma.sensores.update({
       where: { id },
