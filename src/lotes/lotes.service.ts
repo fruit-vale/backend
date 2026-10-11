@@ -9,7 +9,7 @@ import { escopoLotes, escopoPropriedades } from '../auth/escopo.js';
 import { dataIso } from '../common/validacao.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { PoligonoLote } from './geometria.js';
+import { poligonoDentro, type PoligonoLote } from './geometria.js';
 
 export type SituacaoLote = 'EM_PREPARO' | 'EM_CULTIVO' | 'COLHIDO';
 export const SITUACOES_LOTE: SituacaoLote[] = [
@@ -129,7 +129,7 @@ export class LotesService {
     const [propriedade, cultura] = await Promise.all([
       this.prisma.propriedades.findFirst({
         where: { id: dados.propriedade_id, ...escopoPropriedades(user) },
-        select: { id: true, empresa_id: true },
+        select: { id: true, nome: true, empresa_id: true, geometria: true },
       }),
       this.prisma.culturas.findUnique({
         where: { id: dados.cultura_id },
@@ -145,6 +145,20 @@ export class LotesService {
         cultura.empresa_id !== propriedade.empresa_id)
     )
       throw new BadRequestException('Cultura não encontrada.');
+
+    // o lote é parte da propriedade: o contorno não pode passar da área dela
+    // (propriedades antigas, sem área desenhada, não limitam)
+    if (
+      dados.geometria &&
+      propriedade.geometria &&
+      !poligonoDentro(
+        dados.geometria,
+        propriedade.geometria as unknown as PoligonoLote,
+      )
+    )
+      throw new BadRequestException(
+        `O lote precisa ficar dentro da área da propriedade ${propriedade.nome}. Ajuste os cantos para dentro do contorno dela.`,
+      );
 
     if (
       dados.data_plantio &&

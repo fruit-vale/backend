@@ -7,7 +7,8 @@ import {
 import type { JwtPayload } from '../auth/decorators.js';
 import { escopoPropriedades } from '../auth/escopo.js';
 import { toRole } from '../auth/roles.js';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
+import { poligonoDentro, type Poligono } from '../lotes/geometria.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export type StatusPropriedade = 'ATIVA' | 'INATIVA';
@@ -20,6 +21,8 @@ export interface DadosPropriedade {
   latitude: number | null;
   longitude: number | null;
   area_total_ha: number | null;
+  /** contorno desenhado no mapa; a área e o ponto acima saem dele */
+  geometria: Poligono;
   /** Opcional; ausente (undefined) mantém o responsável atual. */
   produtor_responsavel_id?: number | null;
   status: StatusPropriedade;
@@ -33,6 +36,7 @@ const propriedadeSelect = {
   latitude: true,
   longitude: true,
   area_total_ha: true,
+  geometria: true,
   status: true,
   empresa_id: true,
   empresas: { select: { id: true, razao_social: true } },
@@ -54,6 +58,7 @@ function toDto(p: PropriedadeRow) {
     latitude: p.latitude?.toNumber() ?? null,
     longitude: p.longitude?.toNumber() ?? null,
     area_total_ha: p.area_total_ha?.toNumber() ?? null,
+    geometria: p.geometria as Poligono | null,
     status: (p.status ?? 'ATIVA') as StatusPropriedade,
     empresa_id: p.empresa_id,
     empresa: p.empresas,
@@ -62,6 +67,12 @@ function toDto(p: PropriedadeRow) {
     total_sensores: p._count.sensores,
   };
 }
+
+/** O JSON do contorno vai para a coluna jsonb. */
+const gravacao = ({ geometria, ...dados }: DadosPropriedade) => ({
+  ...dados,
+  geometria: geometria as unknown as Prisma.InputJsonValue,
+});
 
 /**
  * Propriedades das empresas. Cadastro e edição são do administrador; os
@@ -129,7 +140,7 @@ export class PropriedadesService {
     await this.garantirNomeUnico(empresaId, dados.nome);
 
     const propriedade = await this.prisma.propriedades.create({
-      data: { ...dados, empresa_id: empresaId },
+      data: { ...gravacao(dados), empresa_id: empresaId },
       select: propriedadeSelect,
     });
     return toDto(propriedade);
@@ -156,13 +167,38 @@ export class PropriedadesService {
       dados.produtor_responsavel_id,
     );
     await this.garantirNomeUnico(atual.empresa_id, dados.nome, id);
+    await this.garantirLotesDentro(id, dados.geometria);
 
     const propriedade = await this.prisma.propriedades.update({
       where: { id },
-      data: dados,
+      data: gravacao(dados),
       select: propriedadeSelect,
     });
     return toDto(propriedade);
+  }
+
+  /** O novo contorno não pode deixar lote desenhado do lado de fora. */
+  private async garantirLotesDentro(id: number, geometria: Poligono) {
+    const lotes = await this.prisma.lotes.findMany({
+      where: {
+        propriedade_id: id,
+        NOT: { geometria: { equals: Prisma.DbNull } },
+      },
+      select: { nome_identificacao: true, geometria: true },
+    });
+    const fora = lotes.filter(
+      (l) =>
+        l.geometria &&
+        !poligonoDentro(l.geometria as unknown as Poligono, geometria),
+    );
+    if (fora.length)
+      throw new BadRequestException(
+        `A nova área deixaria de fora ${fora.length === 1 ? 'o lote' : 'os lotes'} ${fora
+          .map((l) => l.nome_identificacao)
+          .join(
+            ', ',
+          )}. Aumente a área ou ajuste o contorno desses lotes antes.`,
+      );
   }
 
   async remover(id: number) {

@@ -11,7 +11,8 @@ import {
   Post,
 } from '@nestjs/common';
 import { CurrentUser, Roles, type JwtPayload } from '../auth/decorators.js';
-import { UFS, numero, texto } from '../common/validacao.js';
+import { UFS, texto } from '../common/validacao.js';
+import { lerGeometria } from '../lotes/geometria.js';
 import {
   PropriedadesService,
   STATUS_PROPRIEDADE,
@@ -37,28 +38,20 @@ function lerPropriedade(body: Record<string, unknown>): DadosPropriedade {
       `Status inválido. Use: ${STATUS_PROPRIEDADE.join(', ')}.`,
     );
 
-  // DECIMAL(10, 8) e DECIMAL(11, 8)
-  const coordenada = { casas: 8, maxInclusivo: true };
-  const latitude = numero(body, 'latitude', {
-    min: -90,
-    max: 90,
-    ...coordenada,
-  });
-  const longitude = numero(body, 'longitude', {
-    min: -180,
-    max: 180,
-    ...coordenada,
-  });
-  if ((latitude === null) !== (longitude === null))
-    throw new BadRequestException('Informe latitude e longitude juntas.');
+  // a área é desenhada no mapa; dela saem a área em hectares e o ponto
+  // (latitude/longitude) que abre o mapa e busca as imagens de satélite
+  if (body?.geometria === undefined || body?.geometria === null)
+    throw new BadRequestException('Desenhe a área da propriedade no mapa.');
+  const contorno = lerGeometria(body.geometria, 'propriedade');
 
   return {
     nome: texto(body, 'nome', { max: 100 })!,
     municipio: texto(body, 'municipio', { max: 100 })!,
     estado,
-    latitude,
-    longitude,
-    area_total_ha: numero(body, 'area_total_ha', { min: 0, max: 100_000_000 }),
+    latitude: contorno.centro.lat,
+    longitude: contorno.centro.lng,
+    area_total_ha: contorno.area_ha,
+    geometria: contorno.geometria,
     // opcional: sem o campo, o responsável atual é mantido
     produtor_responsavel_id:
       body && 'produtor_responsavel_id' in body
