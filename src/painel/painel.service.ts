@@ -18,11 +18,19 @@ import type { TipoMedida } from '../sensores/medidas.js';
 export type StatusCultivo = 'normal' | 'atencao' | 'sem_dados' | 'sem_faixa';
 
 /** Recorte opcional dos sensores do gráfico e da tabela. */
-export type FiltroPainel = { propriedadeId?: number; loteId?: number };
+export type FiltroPainel = {
+  propriedadeId?: number;
+  loteId?: number;
+  sensorId?: number;
+};
+
+/** Intervalo das leituras: os últimos N dias ou datas escolhidas. */
+export type Periodo = { desde: Date; ate: Date };
 
 const filtroSensores = (f: FiltroPainel): Prisma.sensoresWhereInput => ({
   ...(f.propriedadeId !== undefined && { propriedade_id: f.propriedadeId }),
   ...(f.loteId !== undefined && { lote_id: f.loteId }),
+  ...(f.sensorId !== undefined && { id: f.sensorId }),
 });
 
 // ordem de gravidade para resumir vários lotes de uma cultura
@@ -281,7 +289,7 @@ export class PainelService {
   async serie(
     user: JwtPayload,
     tipo: TipoMedida,
-    dias: number,
+    periodo: Periodo,
     filtro: FiltroPainel = {},
   ) {
     const sensores = await this.prisma.sensores.findMany({
@@ -292,10 +300,12 @@ export class PainelService {
       },
       select: { id: true },
     });
-    if (!sensores.length) return { tipo, unidade: null, series: [] };
-
-    const intervalo = dias <= 7 ? 'hour' : 'day';
-    const desde = new Date(Date.now() - dias * DIA_MS);
+    const intervalo =
+      periodo.ate.getTime() - periodo.desde.getTime() <= 7 * DIA_MS
+        ? 'hour'
+        : 'day';
+    if (!sensores.length) return { tipo, intervalo, unidade: null, series: [] };
+    const { desde, ate } = periodo;
     const linhas = await this.prisma.$queryRaw<
       {
         sensor_id: number;
@@ -317,6 +327,7 @@ export class PainelService {
       LEFT JOIN lotes l ON l.id = s.lote_id
       WHERE m.tipo = ${tipo}
         AND ls.data_hora >= ${desde}
+        AND ls.data_hora <= ${ate}
         AND s.id IN (${Prisma.join(sensores.map((s) => s.id))})
       GROUP BY s.id, s.codigo_sensor, l.nome_identificacao, m.unidade, instante
       ORDER BY instante`;
@@ -359,7 +370,7 @@ export class PainelService {
   async leituras(
     user: JwtPayload,
     tipo: TipoMedida,
-    dias: number,
+    periodo: Periodo,
     filtro: FiltroPainel = {},
   ) {
     const sensores = await this.prisma.sensores.findMany({
@@ -372,7 +383,7 @@ export class PainelService {
     });
     if (!sensores.length) return { tipo, limite: LEITURAS_MAX, leituras: [] };
 
-    const desde = new Date(Date.now() - dias * DIA_MS);
+    const { desde, ate } = periodo;
     const linhas = await this.prisma.$queryRaw<
       {
         sensor: string;
@@ -392,6 +403,7 @@ export class PainelService {
       LEFT JOIN lotes l ON l.id = s.lote_id
       WHERE m.tipo = ${tipo}
         AND ls.data_hora >= ${desde}
+        AND ls.data_hora <= ${ate}
         AND s.id IN (${Prisma.join(sensores.map((s) => s.id))})
       ORDER BY ls.data_hora DESC, ls.id DESC
       LIMIT ${LEITURAS_MAX + 1}`;

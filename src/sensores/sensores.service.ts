@@ -59,6 +59,12 @@ const sensorSelect = {
     orderBy: { id: 'asc' },
   },
   _count: { select: { leituras_sensores: true } },
+  // a mais recente (índice sensor_id + data_hora)
+  leituras_sensores: {
+    select: { data_hora: true },
+    orderBy: { data_hora: 'desc' },
+    take: 1,
+  },
 } as const;
 
 type SensorRow = Prisma.sensoresGetPayload<{ select: typeof sensorSelect }>;
@@ -82,6 +88,8 @@ function toDto(sensor: SensorRow, acesso: AcessoMqtt) {
     empresa: sensor.propriedades.empresas,
     medidas: sensor.medidas.map((m) => ({ ...m, tipo: m.tipo as TipoMedida })),
     total_leituras: sensor._count.leituras_sensores,
+    ultima_leitura:
+      sensor.leituras_sensores[0]?.data_hora.toISOString() ?? null,
     acesso_mqtt: acesso,
   };
 }
@@ -152,7 +160,7 @@ export class SensoresService {
   }
 
   async listar(user: JwtPayload) {
-    this.exigirPerfil(user);
+    // listar é só leitura: o analista também pode (cadastros e senhas, não)
     const [sensores, acessos] = await Promise.all([
       this.prisma.sensores.findMany({
         where: escopoSensores(user),

@@ -4,6 +4,11 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
 import type { TipoMedida } from '../sensores/medidas.js';
 import {
+  alertasDaLeitura,
+  JANELA_ALERTA_MS,
+  type FaixaCultura,
+} from './alertas-faixa.js';
+import {
   FILTRO_LEITURAS,
   lerLeitura,
   lerTopico,
@@ -18,7 +23,12 @@ type SensorIngestao = {
   empresa_id: number;
   status: string;
   medidas: MedidaIngestao[];
+  /** lote atual e a faixa ideal da cultura dele (para os alertas) */
+  lote_id: number | null;
+  faixa: FaixaCultura | null;
 } | null;
+
+const num = (valor: { toNumber(): number } | null) => valor?.toNumber() ?? null;
 
 export const chaveSensor = (codigo: string) => `sensor:${codigo}`;
 
@@ -59,8 +69,22 @@ export class IngestaoService implements OnModuleInit {
         status: true,
         propriedades: { select: { empresa_id: true } },
         medidas: { select: { id: true, chave: true, tipo: true } },
+        lotes: {
+          select: {
+            id: true,
+            culturas: {
+              select: {
+                temp_recomendada_min: true,
+                temp_recomendada_max: true,
+                umidade_recomendada_min: true,
+                umidade_recomendada_max: true,
+              },
+            },
+          },
+        },
       },
     });
+    const cultura = encontrado?.lotes?.culturas;
     const sensor = encontrado && {
       id: encontrado.id,
       empresa_id: encontrado.propriedades.empresa_id,
@@ -69,6 +93,15 @@ export class IngestaoService implements OnModuleInit {
         ...m,
         tipo: m.tipo as TipoMedida,
       })),
+      lote_id: encontrado.lotes?.id ?? null,
+      faixa: cultura
+        ? {
+            temp_min: num(cultura.temp_recomendada_min),
+            temp_max: num(cultura.temp_recomendada_max),
+            umid_min: num(cultura.umidade_recomendada_min),
+            umid_max: num(cultura.umidade_recomendada_max),
+          }
+        : null,
     };
     await this.redis.gravar(chaveSensor(codigo), sensor, TTL_SENSOR_SEGUNDOS);
     return sensor;
@@ -106,5 +139,45 @@ export class IngestaoService implements OnModuleInit {
         valores: { create: leitura.valores },
       },
     });
+
+    if (sensor.lote_id !== null && sensor.faixa)
+      await this.alertar(
+        sensor.id,
+        sensor.lote_id,
+        destino.codigo,
+        alertasDaLeitura(leitura.fixas, sensor.faixa, destino.codigo),
+        leitura.data_hora,
+      );
+  }
+
+  /** Grava os alertas da leitura, sem repetir o mesmo dado do sensor na janela. */
+  private async alertar(
+    sensorId: number,
+    loteId: number,
+    codigo: string,
+    alertas: ReturnType<typeof alertasDaLeitura>,
+    dataHora: Date,
+  ) {
+    for (const alerta of alertas) {
+      const recente = await this.prisma.alertas_climaticos.findFirst({
+        where: {
+          lote_id: loteId,
+          sensor_id: sensorId,
+          mensagem: { startsWith: alerta.prefixo },
+          data_hora: { gte: new Date(dataHora.getTime() - JANELA_ALERTA_MS) },
+        },
+        select: { id: true },
+      });
+      if (recente) continue;
+      await this.prisma.alertas_climaticos.create({
+        data: {
+          lote_id: loteId,
+          sensor_id: sensorId,
+          mensagem: alerta.mensagem,
+          data_hora: dataHora,
+        },
+      });
+      this.logger.log(`Alerta em ${codigo}: ${alerta.mensagem}`);
+    }
   }
 }

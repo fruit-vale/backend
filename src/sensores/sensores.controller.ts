@@ -54,7 +54,9 @@ function lerStatus(valor: unknown): StatusSensor {
 export class SensoresController {
   constructor(private readonly sensores: SensoresService) {}
 
+  /** O analista também lista (só leitura): sensores sem leitura recente, filtros. */
   @Get()
+  @Roles('administrador', 'produtor', 'analista')
   listar(@CurrentUser() user: JwtPayload) {
     return this.sensores.listar(user);
   }
