@@ -10,6 +10,7 @@ import { MqttModule } from './mqtt/mqtt.module.js';
 import { PainelModule } from './painel/painel.module.js';
 import { PrevisaoModule } from './previsao/previsao.module.js';
 import { AlertasModule } from './alertas/alertas.module.js';
+import { MercadoModule } from './mercado/mercado.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PropriedadesModule } from './propriedades/propriedades.module.js';
 import { RedisModule } from './redis/redis.module.js';
@@ -32,6 +33,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     PainelModule,
     PrevisaoModule,
     AlertasModule,
+    MercadoModule,
   ],
   controllers: [AppController],
   providers: [AppService],

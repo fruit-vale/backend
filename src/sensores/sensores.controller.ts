@@ -68,7 +68,8 @@ export class SensoresController {
   ) {
     return this.sensores.criar(user, {
       identificador: lerIdentificador(body?.identificador),
-      tipo: texto(body, 'tipo', { max: 50 })!,
+      // opcional: o app não pede mais; sem ele, vale o nome dos dados que o sensor envia
+      tipo: texto(body, 'tipo', { obrigatorio: false, max: 50 }),
       lote_id: lerLoteId(body?.lote_id),
       data_instalacao: data(body, 'data_instalacao'),
       medidas: lerMedidas(body?.medidas),

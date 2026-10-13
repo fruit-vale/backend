@@ -31,7 +31,8 @@ const TRANSACAO = { timeout: 15_000 };
 
 export interface NovoSensor {
   identificador: string;
-  tipo: string;
+  /** null: descreve o sensor pelos dados que ele envia */
+  tipo: string | null;
   /** O sensor fica num lote; a propriedade vem dele. */
   lote_id: number;
   data_instalacao: Date | null;
@@ -212,11 +213,20 @@ export class SensoresService {
     await this.dispositivos.garantirRoleEmpresa(propriedade.empresa_id);
     const senha = gerarSenha();
 
+    // a coluna é obrigatória: sem tipo informado, os nomes dos dados ("Temperatura, Umidade")
+    const tipo =
+      dados.tipo ||
+      dados.medidas
+        .map((m) => m.nome)
+        .join(', ')
+        .slice(0, 50) ||
+      'Sensor';
+
     const sensor = await this.prisma.$transaction(async (tx) => {
       const criado = await tx.sensores.create({
         data: {
           codigo_sensor: codigo,
-          tipo: dados.tipo,
+          tipo,
           propriedade_id: propriedade.id,
           lote_id: lote.id,
           data_instalacao: dados.data_instalacao,
@@ -235,7 +245,7 @@ export class SensoresService {
       await this.dynsec.criarCliente({
         username: codigo,
         password: senha,
-        textname: descricao(dados, propriedade, lote),
+        textname: descricao({ tipo }, propriedade, lote),
         roles: [roleEmpresa(propriedade.empresa_id)],
       });
       return criado;

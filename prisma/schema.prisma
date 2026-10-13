@@ -211,3 +211,53 @@ model ciclos_cultivo {
 
   @@index([lote_id], map: "idx_ciclos_cultivo_lote")
 }
+
+/// Conab PROHORT: comercialização mensal nas Ceasas, por produto, Ceasa e origem.
+model precos_atacado {
+  id               BigInt  @id @default(autoincrement())
+  ano              Int
+  mes              Int
+  produto          String  @db.VarChar(80)
+  ceasa            String  @db.VarChar(120)
+  uf_ceasa         String  @db.VarChar(2)
+  municipio_origem String  @db.VarChar(120)
+  uf_origem        String  @db.VarChar(2)
+  quantidade_kg    Decimal @db.Decimal(16, 2)
+  valor_rs         Decimal @db.Decimal(16, 2)
+
+  @@index([produto, ano, mes], map: "idx_precos_atacado_produto")
+}
+
+/// Conab Preços Agropecuários: preço recebido pelo produtor, por UF e mês.
+model precos_produtor {
+  id            BigInt  @id @default(autoincrement())
+  ano           Int
+  mes           Int
+  produto       String  @db.VarChar(80)
+  classificacao String  @db.VarChar(80)
+  uf            String  @db.VarChar(2)
+  valor_kg      Decimal @db.Decimal(12, 4)
+
+  @@index([produto, ano, mes], map: "idx_precos_produtor_produto")
+}
+
+/// Comex Stat (MDIC): exportações por NCM, país e mês.
+model exportacoes {
+  id            BigInt  @id @default(autoincrement())
+  ano           Int
+  mes           Int
+  ncm           String  @db.VarChar(8)
+  pais          String  @db.VarChar(120)
+  valor_fob_usd Decimal @db.Decimal(16, 2)
+  peso_kg       Decimal @db.Decimal(16, 2)
+
+  @@index([ncm, ano, mes], map: "idx_exportacoes_ncm")
+}
+
+model mercado_importacoes {
+  fonte        String    @id @db.VarChar(20)
+  iniciado_em  DateTime  @db.Timestamp(6)
+  concluido_em DateTime? @db.Timestamp(6)
+  linhas       Int?
+  erro         String?
+}
