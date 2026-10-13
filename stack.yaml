@@ -4,17 +4,6 @@ services:
     networks:
       - network_public
       - fruitvale_internal
-    environment:
-      PORT: 3000
-      NODE_ENV: production
-      DATABASE_URL: "postgresql://postgres.coxrxbjgukdmfuiaznjq:fruitvale2026@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
-      CORS_ORIGINS: "https://fruitvale.com.br"
-      JWT_SECRET: "3G3Pz+dYc/dtMqHBKTWLnpqNyoGPEHt8IcLF3mQScIXI0ECkpO30DpQrnJMq6tnL"
-      JWT_EXPIRES_IN: "8h"
-      MQTT_URL: "mqtt://fruitvale-mosquitto:1883"
-      MQTT_USER: fruitvale
-      MQTT_PASS: Fearg4lo&7
-      REDIS_URL: "redis://:8ea4a0d553ce6b77b9e9eb4494dc93183cf91bc03187988b@fruitvale-redis:6379"
     deploy:
       replicas: 1
       restart_policy:
