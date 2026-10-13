@@ -35,7 +35,7 @@ function lerMeses(valor: string | undefined, padrao: number) {
 }
 
 @Controller('mercado')
-@Roles('administrador', 'produtor', 'analista')
+@Roles('administrador', 'analista')
 export class MercadoController {
   constructor(
     private readonly mercado: MercadoService,
