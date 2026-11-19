@@ -26,6 +26,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/prisma ./prisma
+COPY prisma7.config.ts ./
+COPY scripts/migrar.mjs scripts/criar-admin.mjs scripts/seed-empresas.mjs ./scripts/
 
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+# aplica as migrations (cria o schema se o banco estiver vazio) e sobe a API
+CMD ["sh", "-c", "node scripts/migrar.mjs && node dist/main.js"]

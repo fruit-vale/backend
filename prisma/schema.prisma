@@ -60,6 +60,18 @@ model empresas {
   estado       String?        @db.VarChar(2)
   responsavel  String?        @db.VarChar(100)
   created_at   DateTime?      @default(now()) @db.Timestamp(6)
+
+  // contrato de adesão: o acesso só é liberado depois do aceite (ACEITO)
+  contrato_status      String    @default("ACEITO") @db.VarChar(10)
+  contrato_token_hash  String?   @unique @db.VarChar(64)
+  contrato_enviado_em  DateTime? @db.Timestamp(6)
+  contrato_expira_em   DateTime? @db.Timestamp(6)
+  contrato_versao      String?   @db.VarChar(10)
+  contrato_aceito_em   DateTime? @db.Timestamp(6)
+  contrato_aceito_nome String?   @db.VarChar(150)
+  contrato_aceito_ip   String?   @db.VarChar(45)
+  contrato_snapshot    Json?
+
   culturas     culturas[]
   propriedades propriedades[]
   usuarios     usuarios[]

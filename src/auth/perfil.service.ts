@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
-import { ativo } from './auth.service.js';
+import { ativo, contratoPendente } from './auth.service.js';
 import type { JwtPayload } from './decorators.js';
 import { exigeEmpresa, toRole } from './roles.js';
 
@@ -44,6 +44,7 @@ export class PerfilService {
         tipo_usuario: true,
         status: true,
         empresa_id: true,
+        empresas: { select: { contrato_status: true } },
       },
     });
     const role = toRole(usuario?.tipo_usuario ?? null);
@@ -51,7 +52,8 @@ export class PerfilService {
       !usuario ||
       !role ||
       !ativo(usuario.status) ||
-      (exigeEmpresa(role) && usuario.empresa_id === null)
+      (exigeEmpresa(role) && usuario.empresa_id === null) ||
+      contratoPendente(usuario.empresas)
     )
       return null;
 

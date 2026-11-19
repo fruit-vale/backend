@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
+import { ContratoModule } from './contrato/contrato.module.js';
 import { CulturasModule } from './culturas/culturas.module.js';
 import { EmpresasModule } from './empresas/empresas.module.js';
 import { LeiturasModule } from './leituras/leituras.module.js';
@@ -23,6 +24,7 @@ import { UsuariosModule } from './usuarios/usuarios.module.js';
     RedisModule,
     AuthModule,
     EmpresasModule,
+    ContratoModule,
     UsuariosModule,
     MqttModule,
     SensoresModule,

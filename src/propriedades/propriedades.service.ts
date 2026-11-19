@@ -91,6 +91,42 @@ export class PropriedadesService {
     return propriedades.map(toDto);
   }
 
+  /**
+   * Para o mapa público: propriedades ativas, com ponto no mapa, de empresas
+   * que já aceitaram o contrato. Só o local e o contorno da propriedade (nunca os lotes).
+   */
+  async listarPublicas() {
+    const propriedades = await this.prisma.propriedades.findMany({
+      where: {
+        status: 'ATIVA',
+        latitude: { not: null },
+        longitude: { not: null },
+        empresas: { contrato_status: 'ACEITO' },
+      },
+      select: {
+        id: true,
+        nome: true,
+        municipio: true,
+        estado: true,
+        latitude: true,
+        longitude: true,
+        geometria: true,
+        empresas: { select: { razao_social: true } },
+      },
+      orderBy: [{ empresas: { razao_social: 'asc' } }, { nome: 'asc' }],
+    });
+    return propriedades.map((p) => ({
+      id: p.id,
+      nome: p.nome,
+      municipio: p.municipio,
+      estado: p.estado,
+      latitude: p.latitude!.toNumber(),
+      longitude: p.longitude!.toNumber(),
+      geometria: p.geometria as Poligono | null,
+      empresa: p.empresas.razao_social,
+    }));
+  }
+
   /** Responsável precisa ser um produtor da mesma empresa. */
   private async validarResponsavel(
     empresaId: number,
